@@ -1,6 +1,7 @@
 package linkgame
 
 import cats.effect.{ExitCode, IO, IOApp}
+import cats.implicits._
 
 import scala.util.Random
 
@@ -8,8 +9,12 @@ object Main extends IOApp {
   val rows = 3
   val cols = 4
   val values = 4
-  type Board = Array[Array[Int]]
+  type Board = Vector[Vector[Int]]
 
+
+  def deleteTileFromBoard(board: Board, p: (Int, Int)): Board = {
+    board.updated(p._1, board(p._1).updated(p._2, 0))
+  }
 
   def isValidPath(board: Board, p1: (Int, Int), p2: (Int, Int)): Boolean = {
     // FIXME: Not considering that lines can be outside of the board
@@ -111,17 +116,17 @@ object Main extends IOApp {
     val shuffledTiles = r.shuffle(allTiles)
     shuffledTiles
       .grouped(cols)
-      .map(_.toArray)
-      .toArray
+      .map(_.toVector)
+      .toVector
   }
 
-  def gameLoop(board: Board): IO[Unit] = {
-    def readInput: IO[Board] = {
+  def gameLoop(b: Board): IO[Unit] = {
+    def readInput(board: Board): IO[Board] = {
       val inputPattern = """^(\d+)\s+(\d+),\s*(\d+)\s+(\d+)$""".r
       for {
         _ <- IO.println("Choose the tiles: ")
         input <- IO.readLine
-        _ <- input match {
+        updatedBoard <- input match {
           case inputPattern(x1, y1, x2, y2) =>
             (x1.toIntOption, y1.toIntOption, x2.toIntOption, y2.toIntOption) match {
               case (Some(x1), Some(y1), Some(x2), Some(y2)) if
@@ -131,30 +136,32 @@ object Main extends IOApp {
                   y2 >= 0 && y2 < board(0).length &&
                   isValidPath(board, (x1, y1), (x2, y2))
               =>
-                board(x1)(y1) = 0
-                board(x2)(y2) = 0
-                IO.unit
+                val updatedBoard1 = deleteTileFromBoard(board, (x1, y1))
+                val updatedBoard2 = deleteTileFromBoard(updatedBoard1, (x2, y2))
+                IO.pure {
+                  updatedBoard2
+                }
               case _ =>
                 println("not a valid number || out of the board || not a valid match")
-                readInput
+                readInput(board)
             }
           case _ =>
             println("Invalid position! Please use the following format \"<x1> <y1>, <x2> <y2>\"")
-            readInput
+            readInput(board)
         }
 
-      } yield board
+      } yield updatedBoard
     }
 
-    def loop: IO[Unit] = {
+    def loop(board: Board): IO[Unit] = {
       for {
-        updatedBoard <- readInput
+        updatedBoard <- readInput(board)
         _ <-
           if (updatedBoard.forall(_.forall(_ != 0))) {
             print("Congratulations!!")
             IO.unit
           } else {
-            printBoard(updatedBoard).flatMap(_ => loop)
+            printBoard(updatedBoard).flatMap(_ => loop(updatedBoard))
           }
       } yield ()
     }
@@ -167,14 +174,14 @@ object Main extends IOApp {
       _ <- IO.println("How to play: TODO_____")
       _ <- IO.println("Example: TODO_____")
       _ <- IO.println("Input format: <x1> <y1>,<x2> <y2>")
-      _ <- printBoard(board)
-      _ <- loop
+      _ <- printBoard(b)
+      _ <- loop(b)
     } yield ()
   }
 
 
   override def run(args: List[String]): IO[ExitCode] = {
-     val board = initBoard(rows, cols)
+    val board = initBoard(rows, cols)
     gameLoop(board).as(ExitCode.Success)
   }
 }
