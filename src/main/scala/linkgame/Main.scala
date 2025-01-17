@@ -13,12 +13,13 @@ object Main extends IOApp {
 
   def isValidPath(board: Board, p1: (Int, Int), p2: (Int, Int)): Boolean = {
     // FIXME: Not considering that lines can be outside of the board
-    def isEmpty(p: (Int, Int)): Boolean = p._1 == 0 && p._2 == 0
+    def isEmpty(p: (Int, Int)): Boolean = board(p._1)(p._2) == 0
 
     def basicCondition(a: (Int, Int) = p1, b: (Int, Int) = p2): Boolean = {
       val (x1, y1) = a
       val (x2, y2) = b
-      a != b && board(x1)(y1) != board(x2)(y2) && isEmpty(a) && isEmpty(b)
+
+      a != b && board(x1)(y1) == board(x2)(y2) && !isEmpty(a) && !isEmpty(b)
     }
 
     def matchStraightLine(a: (Int, Int) = p1, b: (Int, Int) = p2): Boolean = {
@@ -97,6 +98,7 @@ object Main extends IOApp {
   }
 
   def initBoard(rows: Int, cols: Int): Board = {
+    // FIXME: the generated board could not have a play
     val allTiles: List[Int] = LazyList
       .continually((1 to 8).flatMap(value => List(value, value)))
       .flatten
@@ -124,8 +126,8 @@ object Main extends IOApp {
             (x1.toIntOption, y1.toIntOption, x2.toIntOption, y2.toIntOption) match {
               case (Some(x1), Some(y1), Some(x2), Some(y2)) if
                 x1 >= 0 && x1 < board.length &&
-                  x2 >= 0 && x2 < board(0).length &&
-                  y1 >= 0 && y1 < board.length &&
+                  x2 >= 0 && x2 < board.length &&
+                  y1 >= 0 && y1 < board(0).length &&
                   y2 >= 0 && y2 < board(0).length &&
                   isValidPath(board, (x1, y1), (x2, y2))
               =>
@@ -172,7 +174,7 @@ object Main extends IOApp {
 
 
   override def run(args: List[String]): IO[ExitCode] = {
-    val board = initBoard(rows, cols)
+     val board = initBoard(rows, cols)
     gameLoop(board).as(ExitCode.Success)
   }
 }
