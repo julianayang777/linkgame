@@ -1,9 +1,9 @@
 package linkgame
 
+import cats.effect.std.Random
 import cats.effect.{ExitCode, IO, IOApp}
+import cats.syntax.all._
 import cats.implicits._
-
-import scala.util.Random
 
 object Main extends IOApp {
   val rows = 3
@@ -102,7 +102,7 @@ object Main extends IOApp {
       )
   }
 
-  def initBoard(rows: Int, cols: Int): Board = {
+  def initBoard(rows: Int, cols: Int): IO[Board] = {
     // FIXME: the generated board could not have a play
     val allTiles: List[Int] = LazyList
       .continually((1 to 8).flatMap(value => List(value, value)))
@@ -110,19 +110,20 @@ object Main extends IOApp {
       .take(rows * cols)
       .toList
 
-    println(s"All Elements: ${allTiles}")
+    println(s"DEBUG: All Elements: ${allTiles}")
 
-    val r = new Random()
-    val shuffledTiles = r.shuffle(allTiles)
-    shuffledTiles
+    for {
+      random <- Random.scalaUtilRandom[IO]
+      shuffledTiles <- random.shuffleList(allTiles)
+    } yield (shuffledTiles
       .grouped(cols)
       .map(_.toVector)
-      .toVector
+      .toVector)
   }
 
   def gameLoop(b: Board): IO[Unit] = {
     def readInput(board: Board): IO[Board] = {
-      val inputPattern = """^(\d+)\s+(\d+),\s*(\d+)\s+(\d+)$""".r
+      val inputPattern = """^(\d+)\s+(\d+)\s*,\s*(\d+)\s+(\d+)$""".r
       for {
         _ <- IO.println("Choose the tiles: ")
         input <- IO.readLine
@@ -180,8 +181,8 @@ object Main extends IOApp {
   }
 
 
-  override def run(args: List[String]): IO[ExitCode] = {
-    val board = initBoard(rows, cols)
-    gameLoop(board).as(ExitCode.Success)
-  }
+  override def run(args: List[String]): IO[ExitCode] = for {
+    board <- initBoard(rows, cols)
+    _ <- gameLoop(board)
+  } yield ExitCode.Success
 }
