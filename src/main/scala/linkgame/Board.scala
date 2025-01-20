@@ -3,7 +3,6 @@ package linkgame
 import cats.effect.IO
 import cats.effect.std.Random
 
-
 object Board {
   type Board = Vector[Vector[Int]]
 
@@ -23,9 +22,9 @@ object Board {
     println(s"DEBUG: All Elements: ${allTiles}")
 
     for {
-      random <- Random.scalaUtilRandom[IO]
+      random        <- Random.scalaUtilRandom[IO]
       shuffledTiles <- random.shuffleList(allTiles)
-      innerBoard = (shuffledTiles
+      innerBoard     = (shuffledTiles
         .grouped(cols)
         .map(_.toVector)
         .toVector)
@@ -41,14 +40,14 @@ object Board {
     } yield (
       board.zipWithIndex.foreach {
         case (_, i) if (i == 0 || i == (rows - 1)) => println("")
-        case (row, i) =>
+        case (row, i)                              =>
           val output = row.tail.init.map {
             case 0 => " ".padTo(3, ' ')
             case n => GameLevel.toEmoji(n).padTo(3, ' ')
           }.mkString
           println(s"${i.toString.padTo(3, ' ')} $output\n")
       }
-      )
+    )
   }
 
   def deleteTileFromBoard(board: Board, p: (Int, Int)): Board = {
@@ -84,7 +83,7 @@ object Board {
       val c = (a._1, b._2)
       val d = (b._1, a._2)
       isEmpty(c) && matchStraightLine(a, c) && matchStraightLine(c, b) ||
-        isEmpty(d) && matchStraightLine(a, d) && matchStraightLine(c, b)
+      isEmpty(d) && matchStraightLine(a, d) && matchStraightLine(c, b)
 
     }
 
@@ -100,18 +99,18 @@ object Board {
         val c1 = (i, a._2)
         val c2 = (i, b._2)
         i != a._2 && isEmpty(c1) && matchStraightLine(a, c1) && matchOneTurnLine(c1, b) ||
-          i != b._2 && isEmpty(c2) && matchStraightLine(b, c2) && matchOneTurnLine(c2, a)
+        i != b._2 && isEmpty(c2) && matchStraightLine(b, c2) && matchOneTurnLine(c2, a)
       }
 
-        ||
+      ||
 
-        // Case 2
-        board(0).indices.exists { i =>
-          val c1 = (a._1, i)
-          val c2 = (b._1, i)
-          i != a._1 && isEmpty(c1) && matchStraightLine(a, c1) && matchOneTurnLine(c1, b) ||
-            i != b._1 && isEmpty(c2) && matchStraightLine(b, c2) && matchOneTurnLine(c2, a)
-        })
+      // Case 2
+      board(0).indices.exists { i =>
+        val c1 = (a._1, i)
+        val c2 = (b._1, i)
+        i != a._1 && isEmpty(c1) && matchStraightLine(a, c1) && matchOneTurnLine(c1, b) ||
+        i != b._1 && isEmpty(c2) && matchStraightLine(b, c2) && matchOneTurnLine(c2, a)
+      })
 
     }
 
