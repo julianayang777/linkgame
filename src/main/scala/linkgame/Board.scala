@@ -4,9 +4,16 @@ import cats.effect.IO
 import cats.effect.std.Random
 
 object Board {
+
   type Board = Vector[Vector[Int]]
 
-  def initBoard(rows: Int, cols: Int, values: Int): IO[Board] = {
+  def initBoard(level: GameLevel): IO[Board] = {
+    val (rows, cols, values) = level match {
+      case GameLevel.Easy => (6, 5, 4)
+      case GameLevel.Medium => (8, 8, 10)
+      case GameLevel.Hard => (10, 10, 12)
+    }
+
     def addBorder(board: Board): Board = {
       val emptyLine: Vector[Int] = Vector.fill(board.head.size + 2)(0)
       Vector(emptyLine) ++ board.map(row => 0 +: row :+ 0) ++ Vector(emptyLine)
@@ -32,10 +39,26 @@ object Board {
   }
 
   def printBoard(board: Board): IO[Unit] = {
+    def toEmoji(n: Int): String = {
+      n match {
+        case 1  => "\uD83D\uDD35" // 🔵
+        case 2  => "\uD83D\uDFE1" // 🟡
+        case 3  => "\uD83D\uDD34" // 🔴
+        case 4  => "\uD83D\uDFE2" // 🟢
+        case 5  => "\uD83D\uDFE3" // 🟣
+        case 6  => "\uD83D\uDC3C" // 🐼
+        case 7  => "\uD83D\uDC28" // 🐨
+        case 8  => "\uD83D\uDC23" // 🐣
+        case 9  => "\uD83E\uDD86" // 🦆
+        case 10 => "\uD83D\uDC38" // 🐸
+        case 11 => "\uD83E\uDD93" // 🦓
+        case 12 => "\uD83E\uDD88" // 🦈
+      }
+    }
+
     val rows = board.length
     val cols = board.head.length
     for {
-      _ <- IO.println("Board: \n")
       _ <- IO.println((1 until cols - 1).foldLeft(" ".padTo(5, ' '))((acc, n) => acc + n.toString.padTo(3, ' ')))
     } yield (
       board.zipWithIndex.foreach {
@@ -43,7 +66,7 @@ object Board {
         case (row, i)                              =>
           val output = row.tail.init.map {
             case 0 => " ".padTo(3, ' ')
-            case n => GameLevel.toEmoji(n).padTo(3, ' ')
+            case n => toEmoji(n).padTo(3, ' ')
           }.mkString
           println(s"${i.toString.padTo(3, ' ')} $output\n")
       }
