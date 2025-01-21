@@ -9,9 +9,9 @@ object Board {
 
   def initBoard(level: GameLevel): IO[Board] = {
     val (rows, cols, values) = level match {
-      case GameLevel.Easy => (6, 5, 4)
+      case GameLevel.Easy   => (6, 5, 4)
       case GameLevel.Medium => (8, 8, 10)
-      case GameLevel.Hard => (10, 10, 12)
+      case GameLevel.Hard   => (10, 10, 12)
     }
 
     def addBorder(board: Board): Board = {
@@ -35,7 +35,11 @@ object Board {
         .grouped(cols)
         .map(_.toVector)
         .toVector)
-    } yield (addBorder(innerBoard))
+      board         <-
+        if (isSolvable(innerBoard)) { IO.pure { addBorder(innerBoard) } }
+        else refreshBoard(innerBoard)
+    } yield board
+
   }
 
   def printBoard(board: Board): IO[Unit] = {
@@ -106,8 +110,7 @@ object Board {
       val c = (a._1, b._2)
       val d = (b._1, a._2)
       isEmpty(c) && matchStraightLine(a, c) && matchStraightLine(c, b) ||
-      isEmpty(d) && matchStraightLine(a, d) && matchStraightLine(c, b)
-
+      isEmpty(d) && matchStraightLine(a, d) && matchStraightLine(d, b)
     }
 
     def matchTwoTurnLine(a: (Int, Int) = p1, b: (Int, Int) = p2): Boolean = {
@@ -134,10 +137,51 @@ object Board {
         i != a._1 && isEmpty(c1) && matchStraightLine(a, c1) && matchOneTurnLine(c1, b) ||
         i != b._1 && isEmpty(c2) && matchStraightLine(b, c2) && matchOneTurnLine(c2, a)
       })
-
     }
 
     basicCondition() && (matchStraightLine() || matchOneTurnLine() || matchTwoTurnLine())
+  }
+
+  def isSolvable(board: Board): Boolean = {
+    val matchingPairs = for {
+      x1    <- board.indices
+      y1    <- board(x1).indices
+      value1 = board(x1)(y1) if value1 != 0
+      x2    <- board.indices
+      y2    <- board(x2).indices if board(x2)(y2) == value1
+    } yield {
+      ((x1, y1), (x2, y2))
+    }
+
+    matchingPairs.exists { case (p1, p2) => isValidPath(board, p1, p2) }
+  }
+
+  def refreshBoard(board: Board): IO[Board] = {
+    def loop: IO[Board] = {
+      val nonEmpty: Vector[(Int, Int)] =
+        for {
+          (row, i)     <- board.zipWithIndex
+          (element, j) <- row.zipWithIndex
+          if element != 0
+        } yield (i, j)
+
+      for {
+        random           <- Random.scalaUtilRandom[IO]
+        shuffledNonEmpty <- random.shuffleVector(nonEmpty)
+      } yield nonEmpty
+        .zip(shuffledNonEmpty)
+        .foldLeft(board) { case (acc, ((initialI, initialJ), (targetI, targetJ))) =>
+          val element = board(initialI)(initialJ)
+          acc.updated(targetI, acc(targetI).updated(targetJ, element))
+        }
+    }
+
+    for {
+      newBoard       <- loop
+      refreshedBoard <-
+        if (isSolvable(newBoard)) { IO.pure { newBoard } }
+        else { refreshBoard(board) }
+    } yield refreshedBoard
 
   }
 

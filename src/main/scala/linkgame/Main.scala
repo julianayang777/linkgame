@@ -90,7 +90,13 @@ object Main extends IOApp {
             print(Green("Congratulations!!!"))
             IO.unit
           } else {
-            printBoard(updatedBoard) *> loop(updatedBoard)
+            if (isSolvable(updatedBoard)) {
+              printBoard(updatedBoard) *> loop(updatedBoard)
+            } else {
+              refreshBoard(updatedBoard).flatMap { newBoard =>
+                printBoard(newBoard) *> loop(newBoard)
+              }
+            }
           }
       } yield ()
     }
