@@ -14,6 +14,9 @@ object Main extends IOApp {
   final case object OutOfBoundsError   extends InputError
   final case object InvalidMatchError  extends InputError
 
+  /**
+   * Parses the input string to determine the game level.
+   */
   def parseGameLevel(input: String): IO[GameLevel] = {
     input.toIntOption match {
       case Some(1) => IO.pure(Easy)
@@ -25,6 +28,9 @@ object Main extends IOApp {
     }
   }
 
+  /**
+   * Main Loop of the game
+   */
   def gameLoop(ref: Ref[IO, GameSession]): IO[Unit] = {
     def validateInput(board: Board, input: String): Either[InputError, (Int, Int, Int, Int)] = {
       val inputPattern = """^(\d+)\s+(\d+)\s*,\s*(\d+)\s+(\d+)$""".r

@@ -54,20 +54,13 @@ object Route {
                     val updatedBoard2  = deleteTileFromBoard(updatedBoard1, p2)
                     val newStatus = if (isEmpty(updatedBoard2)) Finished else InProgress
                     // TODO: refresh board when there is not any possible play
-//                    for {
-//                      newStatus <- if (isEmpty(updatedBoard2)) Finished.pure[IO] else InProgress.pure[IO]
-//                      newBoard <-
-//                        if (isSolvable(updatedBoard2)) { IO.pure { updatedBoard2 } }
-//                        else { refreshBoard(updatedBoard2) }
-//                    } yield ()
-
                     val updatedSession = session.copy(updatedBoard2, newStatus)
                     (map.updated(id, updatedSession), Some(updatedSession))
                   } else {
                     // TODO: Distinguish errors
-                    (map, None.pure[IO])
+                    (map, None)
                   }
-                case None          => (map, None.pure[IO])
+                case None          => (map, None)
               }
             }
             response <- session match {

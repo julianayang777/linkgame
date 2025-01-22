@@ -7,6 +7,10 @@ object Board {
 
   type Board = Vector[Vector[Int]]
 
+  /**
+   * Randomly initializes the game board based on the selected level.
+   * The generated board have a border of zeros's around
+   */
   def initBoard(level: GameLevel): IO[Board] = {
     val (rows, cols, values) = level match {
       case GameLevel.Easy   => (6, 5, 4)
@@ -19,7 +23,6 @@ object Board {
       Vector(emptyLine) ++ board.map(row => 0 +: row :+ 0) ++ Vector(emptyLine)
     }
 
-    // FIXME: the generated board could not have a play
     val allTiles: List[Int] = LazyList
       .continually((1 to values).flatMap(value => List(value, value)))
       .flatten
@@ -42,6 +45,9 @@ object Board {
 
   }
 
+  /**
+   * Prints the game board to the console, converting each value to a emoji.
+   */
   def printBoard(board: Board): IO[Unit] = {
     def toEmoji(n: Int): String = {
       n match {
@@ -77,14 +83,23 @@ object Board {
     )
   }
 
+  /**
+   * Removes a specific tile located at point `p` from the board.
+   */
   def deleteTileFromBoard(board: Board, p: (Int, Int)): Board = {
     board.updated(p._1, board(p._1).updated(p._2, 0))
   }
 
+  /**
+   * Checks whether the board if empty or not
+   */
   def isEmpty(board: Board): Boolean = board.forall(_.forall(_ == 0))
 
+  /**
+   * Checks if there is a valid path between two points on the board.
+   * A valid path can be a straight line or a line with one or two turns.
+   */
   def isValidPath(board: Board, p1: (Int, Int), p2: (Int, Int)): Boolean = {
-    // FIXME: Not considering that lines can be outside of the board
     def isEmpty(p: (Int, Int)): Boolean = board(p._1)(p._2) == 0
 
     def basicCondition(a: (Int, Int) = p1, b: (Int, Int) = p2): Boolean = {
@@ -144,6 +159,9 @@ object Board {
     basicCondition() && (matchStraightLine() || matchOneTurnLine() || matchTwoTurnLine())
   }
 
+  /**
+   * Checks if there is at least one valid match.
+   */
   def isSolvable(board: Board): Boolean = {
     val matchingPairs = for {
       x1    <- board.indices
@@ -158,6 +176,9 @@ object Board {
     matchingPairs.exists { case (p1, p2) => isValidPath(board, p1, p2) }
   }
 
+  /**
+   * Refresh the board until it is solvable.
+   */
   def refreshBoard(board: Board): IO[Board] = {
     def loop: IO[Board] = {
       val nonEmpty: Vector[(Int, Int)] =
