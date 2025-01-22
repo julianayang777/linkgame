@@ -8,7 +8,7 @@ object Format {
     "BOLD" -> "\u001B[1m",
   )
 
-  private def applyStyle(text: String, style: String = "RESET"): String = {
+  private def applyStyle(text: String, style: String): String = {
     val styleCode = styles.getOrElse(style.toUpperCase, styles("RESET"))
     s"$styleCode$text${styles("RESET")}"
   }

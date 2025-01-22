@@ -5,6 +5,7 @@ import cats.implicits._
 import linkgame.Board._
 import linkgame.GameLevel.{Easy, Hard, Medium}
 import Format._
+import linkgame.GameStatus.{Finished, InProgress}
 
 object Main extends IOApp {
 
@@ -24,7 +25,7 @@ object Main extends IOApp {
     }
   }
 
-  def gameLoop(ref: Ref[IO, Board]): IO[Unit] = {
+  def gameLoop(ref: Ref[IO, GameSession]): IO[Unit] = {
     def validateInput(board: Board, input: String): Either[InputError, (Int, Int, Int, Int)] = {
       val inputPattern = """^(\d+)\s+(\d+)\s*,\s*(\d+)\s+(\d+)$""".r
       input match {
@@ -82,19 +83,20 @@ object Main extends IOApp {
       } yield updatedBoard
     }
 
-    def loop(ref: Ref[IO, Board]): IO[Unit] = {
+    def loop(ref: Ref[IO, GameSession]): IO[Unit] = {
       for {
-        board        <- ref.get
-        updatedBoard <- getInputAndUpdateBoard(board)
+        session      <- ref.get
+        updatedBoard <- getInputAndUpdateBoard(session.board)
         _            <-
-          if (updatedBoard.forall(_.forall(_ == 0))) {
+          if (isEmpty(updatedBoard)) {
+            ref.update(_ => session.copy(updatedBoard, Finished)) *>
             IO.println(Green("Congratulations!!!"))
           } else {
             for {
               newBoard <-
                 if (isSolvable(updatedBoard)) { IO.pure { updatedBoard } }
                 else { refreshBoard(updatedBoard) }
-              _        <- ref.update(_ => newBoard)
+              _        <- ref.update(_ => session.copy(newBoard))
               _        <- printBoard(newBoard)
               _        <- loop(ref)
             } yield ()
@@ -103,18 +105,18 @@ object Main extends IOApp {
     }
 
     for {
-      b <- ref.get
-      _ <- IO.println(s"${Bold("Goal")}: Clear the board by matching pairs of tiles")
-      _ <- IO.println(s"${Bold("Matching rules:")} ")
-      _ <- IO.println(s" ${Bold("1.")} Tiles can be linked if a clear path exists between them.")
-      _ <- IO.println(s" ${Bold("2.")} The path can bend at most twice and cannot cross other tiles.")
-      _ <- IO.println(
+      session <- ref.get
+      _       <- IO.println(s"${Bold("Goal")}: Clear the board by matching pairs of tiles")
+      _       <- IO.println(s"${Bold("Matching rules:")} ")
+      _       <- IO.println(s" ${Bold("1.")} Tiles can be linked if a clear path exists between them.")
+      _       <- IO.println(s" ${Bold("2.")} The path can bend at most twice and cannot cross other tiles.")
+      _       <- IO.println(
         s"${Bold("How to play:")} Enter coordinates of two tiles to match in the following format: <x1> <y1>,<x2> <y2>"
       )
-      _ <- IO.println(s"${Bold("Example:")} To match tiles at (1, 2) and (3, 4), input: 1 2, 3 4")
-      _ <- IO.println("Good luck!\n")
-      _ <- printBoard(b)
-      _ <- loop(ref)
+      _       <- IO.println(s"${Bold("Example:")} To match tiles at (1, 2) and (3, 4), input: 1 2, 3 4")
+      _       <- IO.println("Good luck!\n")
+      _       <- printBoard(session.board)
+      _       <- loop(ref)
     } yield ()
   }
 
@@ -129,7 +131,7 @@ object Main extends IOApp {
       input    <- IO.readLine
       level    <- parseGameLevel(input)
       board    <- initBoard(level)
-      stateRef <- Ref.of[IO, Board](board)
+      stateRef <- Ref.of[IO, GameSession](GameSession(board, InProgress))
       _        <- gameLoop(stateRef)
     } yield ExitCode.Success
   }

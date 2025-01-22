@@ -81,6 +81,8 @@ object Board {
     board.updated(p._1, board(p._1).updated(p._2, 0))
   }
 
+  def isEmpty(board: Board): Boolean = board.forall(_.forall(_ == 0))
+
   def isValidPath(board: Board, p1: (Int, Int), p2: (Int, Int)): Boolean = {
     // FIXME: Not considering that lines can be outside of the board
     def isEmpty(p: (Int, Int)): Boolean = board(p._1)(p._2) == 0
