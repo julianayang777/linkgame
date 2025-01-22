@@ -1,6 +1,6 @@
 package linkgame
 
-import cats.effect.{ExitCode, IO, IOApp}
+import cats.effect.{ExitCode, IO, IOApp, Ref}
 import cats.implicits._
 import linkgame.Board._
 import linkgame.GameLevel.{Easy, Hard, Medium}
@@ -24,7 +24,7 @@ object Main extends IOApp {
     }
   }
 
-  def gameLoop(b: Board): IO[Unit] = {
+  def gameLoop(ref: Ref[IO, Board]): IO[Unit] = {
     def validateInput(board: Board, input: String): Either[InputError, (Int, Int, Int, Int)] = {
       val inputPattern = """^(\d+)\s+(\d+)\s*,\s*(\d+)\s+(\d+)$""".r
       input match {
@@ -82,26 +82,28 @@ object Main extends IOApp {
       } yield updatedBoard
     }
 
-    def loop(board: Board): IO[Unit] = {
+    def loop(ref: Ref[IO, Board]): IO[Unit] = {
       for {
+        board        <- ref.get
         updatedBoard <- getInputAndUpdateBoard(board)
         _            <-
           if (updatedBoard.forall(_.forall(_ == 0))) {
-            print(Green("Congratulations!!!"))
-            IO.unit
+            IO.println(Green("Congratulations!!!"))
           } else {
-            if (isSolvable(updatedBoard)) {
-              printBoard(updatedBoard) *> loop(updatedBoard)
-            } else {
-              refreshBoard(updatedBoard).flatMap { newBoard =>
-                printBoard(newBoard) *> loop(newBoard)
-              }
-            }
+            for {
+              newBoard <-
+                if (isSolvable(updatedBoard)) { IO.pure { updatedBoard } }
+                else { refreshBoard(updatedBoard) }
+              _        <- ref.update(_ => newBoard)
+              _        <- printBoard(newBoard)
+              _        <- loop(ref)
+            } yield ()
           }
       } yield ()
     }
 
     for {
+      b <- ref.get
       _ <- IO.println(s"${Bold("Goal")}: Clear the board by matching pairs of tiles")
       _ <- IO.println(s"${Bold("Matching rules:")} ")
       _ <- IO.println(s" ${Bold("1.")} Tiles can be linked if a clear path exists between them.")
@@ -112,22 +114,23 @@ object Main extends IOApp {
       _ <- IO.println(s"${Bold("Example:")} To match tiles at (1, 2) and (3, 4), input: 1 2, 3 4")
       _ <- IO.println("Good luck!\n")
       _ <- printBoard(b)
-      _ <- loop(b)
+      _ <- loop(ref)
     } yield ()
   }
 
   override def run(args: List[String]): IO[ExitCode] = {
     for {
-      _     <- IO.println("##############################")
-      _     <- IO.println("           Link Game          ")
-      _     <- IO.println("##############################")
-      _     <- IO.println(
+      _        <- IO.println("##############################")
+      _        <- IO.println("           Link Game          ")
+      _        <- IO.println("##############################")
+      _        <- IO.println(
         s"Choose a game level by entering the corresponding number:\n${Bold("1")} - Easy\n${Bold("2")} - Medium\n${Bold("3")} - Hard"
       )
-      input <- IO.readLine
-      level <- parseGameLevel(input)
-      board <- initBoard(level)
-      _     <- gameLoop(board)
+      input    <- IO.readLine
+      level    <- parseGameLevel(input)
+      board    <- initBoard(level)
+      stateRef <- Ref.of[IO, Board](board)
+      _        <- gameLoop(stateRef)
     } yield ExitCode.Success
   }
 }
