@@ -1,11 +1,11 @@
 package server
 
+import cats.effect.std.AtomicCell
 import cats.effect.{IO, Ref}
-import cats.implicits.catsSyntaxApplicativeId
 import linkgame.{GameLevel, GameSession}
 import org.http4s.HttpRoutes
 import io.circe.generic.auto._
-import linkgame.Board.{deleteTileFromBoard, initBoard, isEmpty, isSolvable, isValidPath, printBoard, refreshBoard}
+import linkgame.Board.{Board, deleteTileFromBoard, initBoard, isEmpty, isSolvable, isValidPath, printBoard, refreshBoard}
 import linkgame.GameStatus.{Finished, InProgress}
 import org.http4s.circe.CirceEntityCodec._
 import org.http4s.dsl.io._
@@ -14,7 +14,28 @@ import java.util.UUID
 import scala.util.Try
 
 object Route {
-  def apply(ref: Ref[IO, Map[UUID, GameSession]]): HttpRoutes[IO] = HttpRoutes.of[IO] {
+  sealed trait InputError
+
+  final case object InvalidSessionError  extends InputError
+  final case object OutOfBoundsError  extends InputError
+  final case object InvalidMatchError extends InputError
+
+
+  def validateCommand(board: Board, p1: (Int, Int), p2: (Int, Int)): Either[InputError, Unit] = {
+    val (x1, y1) = p1
+    val (x2, y2) = p2
+
+    if (
+      !(x1 > 0 && x1 < (board.length - 1) &&
+        x2 > 0 && x2 < (board.length - 1) &&
+        y1 > 0 && y1 < (board(0).length - 1) &&
+        y2 > 0 && y2 < (board(0).length - 1))
+    ) { Left(OutOfBoundsError) }
+    else if (!isValidPath(board, (x1, y1), (x2, y2)))
+    { Left(InvalidMatchError) }
+    else { Right(()) }
+  }
+  def apply(ref: AtomicCell[IO, Map[UUID, GameSession]]): HttpRoutes[IO] = HttpRoutes.of[IO] {
     /** curl -XPOST "localhost:8080/game/start/<level>
       * <level> := "easy" | "medium" | "hard"
       * Response:
@@ -45,30 +66,31 @@ object Route {
           for {
             command  <- req.as[Command]
             (p1, p2)  = ((command.x1, command.y1), (command.x2, command.y2))
-            session  <- ref.modify { map =>
-              // TODO: shoud i do commmand validation? (the points are in the bound)
+            session  <- ref.evalModify { map =>
               map.get(id) match {
                 case Some(session) =>
-                  if (isValidPath(session.board, p1, p2)) {
-                    val updatedBoard1  = deleteTileFromBoard(session.board, p1)
-                    val updatedBoard2  = deleteTileFromBoard(updatedBoard1, p2)
-                    val newStatus = if (isEmpty(updatedBoard2)) Finished else InProgress
-                    // TODO: refresh board when there is not any possible play
-                    val updatedSession = session.copy(updatedBoard2, newStatus)
-                    (map.updated(id, updatedSession), Some(updatedSession))
-                  } else {
-                    // TODO: Distinguish errors
-                    (map, None)
+                  validateCommand(session.board, p1, p2) match {
+                    case Left(error) => IO.pure(map, Left(error))
+                    case Right(()) => {
+                      val updatedBoard1 = deleteTileFromBoard(session.board, p1)
+                      val updatedBoard2 = deleteTileFromBoard(updatedBoard1, p2)
+                      for {
+                        newBoard      <-
+                          if (isSolvable(updatedBoard2)) { IO.pure { updatedBoard2 } }
+                          else { refreshBoard(updatedBoard2) }
+                        newStatus      = if (isEmpty(updatedBoard2)) Finished else InProgress
+                        updatedSession = session.copy(newBoard, newStatus)
+                      } yield (map.updated(id, updatedSession), Right(updatedSession))
+                    }
                   }
-                case None          => (map, None)
+                case None          => IO.pure((map, Left(InvalidSessionError)))
               }
             }
             response <- session match {
-              case Some(session) =>
-                // DEBUG
-                printBoard(session.board) *>
-                  Ok(session)
-              case None          => BadRequest("Session ID not found or Invalid match.")
+              case Left(InvalidSessionError) => BadRequest("Session ID not found")
+              case Left(OutOfBoundsError) => BadRequest("Point is out of bounds")
+              case Left(InvalidMatchError) => BadRequest("Invalid Match")
+              case Right(session) => printBoard(session.board) *> Ok(session)
             }
           } yield response
         }
