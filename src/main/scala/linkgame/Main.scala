@@ -14,9 +14,8 @@ object Main extends IOApp {
   final case object OutOfBoundsError   extends InputError
   final case object InvalidMatchError  extends InputError
 
-  /**
-   * Parses the input string to determine the game level.
-   */
+  /** Parses the input string to determine the game level.
+    */
   def parseGameLevel(input: String): IO[GameLevel] = {
     input.toIntOption match {
       case Some(1) => IO.pure(Easy)
@@ -28,9 +27,8 @@ object Main extends IOApp {
     }
   }
 
-  /**
-   * Main Loop of the game
-   */
+  /** Main Loop of the game
+    */
   def gameLoop(ref: Ref[IO, GameSession]): IO[Unit] = {
     def validateInput(board: Board, input: String): Either[InputError, (Int, Int, Int, Int)] = {
       val inputPattern = """^(\d+)\s+(\d+)\s*,\s*(\d+)\s+(\d+)$""".r
@@ -96,7 +94,7 @@ object Main extends IOApp {
         _            <-
           if (isEmpty(updatedBoard)) {
             ref.update(_ => session.copy(updatedBoard, Finished)) *>
-            IO.println(Green("Congratulations!!!"))
+              IO.println(Green(s"Congratulations ${session.player.name}"))
           } else {
             for {
               newBoard <-
@@ -131,13 +129,16 @@ object Main extends IOApp {
       _        <- IO.println("##############################")
       _        <- IO.println("           Link Game          ")
       _        <- IO.println("##############################")
+      _        <- IO.print(s"Enter your username: ")
+      username <- IO.readLine
+      player    = Player(username)
       _        <- IO.println(
         s"Choose a game level by entering the corresponding number:\n${Bold("1")} - Easy\n${Bold("2")} - Medium\n${Bold("3")} - Hard"
       )
       input    <- IO.readLine
       level    <- parseGameLevel(input)
       board    <- initBoard(level)
-      stateRef <- Ref.of[IO, GameSession](GameSession(board, InProgress))
+      stateRef <- Ref.of[IO, GameSession](GameSession(board, InProgress, player))
       _        <- gameLoop(stateRef)
     } yield ExitCode.Success
   }
