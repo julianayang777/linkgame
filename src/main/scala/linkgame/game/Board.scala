@@ -1,4 +1,4 @@
-package linkgame
+package linkgame.game
 
 import cats.effect.IO
 import cats.effect.std.Random
@@ -7,10 +7,9 @@ object Board {
 
   type Board = Vector[Vector[Int]]
 
-  /**
-   * Randomly initializes the game board based on the selected level.
-   * The generated board have a border of zeros's around
-   */
+  /** Randomly initializes the game board based on the selected level.
+    * The generated board have a border of zeros's around
+    */
   def initBoard(level: GameLevel): IO[Board] = {
     val (rows, cols, values) = level match {
       case GameLevel.Easy   => (6, 5, 4)
@@ -45,9 +44,8 @@ object Board {
 
   }
 
-  /**
-   * Prints the game board to the console, converting each value to a emoji.
-   */
+  /** Prints the game board to the console, converting each value to a emoji.
+    */
   def printBoard(board: Board): IO[Unit] = {
     def toEmoji(n: Int): String = {
       n match {
@@ -83,22 +81,30 @@ object Board {
     )
   }
 
-  /**
-   * Removes a specific tile located at point `p` from the board.
-   */
-  def deleteTileFromBoard(board: Board, p: (Int, Int)): Board = {
-    board.updated(p._1, board(p._1).updated(p._2, 0))
+  /** Check if the given coordinate is within the board's valid range.
+    * Returns `false` if the coordinates is either:
+    * - Out of bounds (outside the board dimensions)
+    * - On one of the border cells
+    */
+  def isCoordinateOnBoard(board: Board, coordinate: Coordinate) = {
+    val rows = board.size - 1
+    val cols = board.headOption.map(_.size - 1).getOrElse(0)
+    coordinate.row > 0 && coordinate.row < rows && coordinate.column > 0 && coordinate.column < cols
   }
 
-  /**
-   * Checks whether the board if empty or not
-   */
+  /** Removes a specific tile located at point `p` from the board.
+    */
+  def deleteTileFromBoard(board: Board, p: Coordinate): Board = {
+    board.updated(p.row, board(p.row).updated(p.column, 0))
+  }
+
+  /** Checks whether the board if empty or not
+    */
   def isEmpty(board: Board): Boolean = board.forall(_.forall(_ == 0))
 
-  /**
-   * Checks if there is a valid path between two points on the board.
-   * A valid path can be a straight line or a line with one or two turns.
-   */
+  /** Checks if there is a valid path between two points on the board.
+    * A valid path can be a straight line or a line with one or two turns.
+    */
   def isValidPath(board: Board, p1: (Int, Int), p2: (Int, Int)): Boolean = {
     def isEmpty(p: (Int, Int)): Boolean = board(p._1)(p._2) == 0
 
@@ -159,9 +165,8 @@ object Board {
     basicCondition() && (matchStraightLine() || matchOneTurnLine() || matchTwoTurnLine())
   }
 
-  /**
-   * Checks if there is at least one valid match.
-   */
+  /** Checks if there is at least one valid match.
+    */
   def isSolvable(board: Board): Boolean = {
     val matchingPairs = for {
       x1    <- board.indices
@@ -176,9 +181,8 @@ object Board {
     matchingPairs.exists { case (p1, p2) => isValidPath(board, p1, p2) }
   }
 
-  /**
-   * Refresh the board until it is solvable.
-   */
+  /** Refresh the board until it is solvable.
+    */
   def refreshBoard(board: Board): IO[Board] = {
     def loop: IO[Board] = {
       val nonEmpty: Vector[(Int, Int)] =

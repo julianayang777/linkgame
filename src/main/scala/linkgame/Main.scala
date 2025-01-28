@@ -1,11 +1,14 @@
 package linkgame
 
-import cats.effect.{ExitCode, IO, IOApp, Ref}
+import cats.effect.std.AtomicCell
+import cats.effect.{ExitCode, IO, IOApp}
 import cats.implicits._
-import linkgame.Board._
-import linkgame.GameLevel.{Easy, Hard, Medium}
-import Format._
-import linkgame.GameStatus.{Finished, InProgress}
+import linkgame.game.Board._
+import linkgame.game.GameLevel.{Easy, Hard, Medium}
+import linkgame.utils.Format._
+import linkgame.game.{Coordinate, GameLevel, GameState}
+import linkgame.game.GameState.{GameError, InProgress}
+import linkgame.player.Player
 
 object Main extends IOApp {
 
@@ -27,119 +30,108 @@ object Main extends IOApp {
     }
   }
 
+  def parseCoordinates(input: String): IO[(Coordinate, Coordinate)] = {
+    val inputPattern = """^(\d+)\s+(\d+)\s*,\s*(\d+)\s+(\d+)$""".r
+    input match {
+      case inputPattern(x1, y1, x2, y2) =>
+        (x1.toIntOption, y1.toIntOption, x2.toIntOption, y2.toIntOption) match {
+          case (Some(x1), Some(y1), Some(x2), Some(y2)) => IO.pure { (Coordinate(x1, y1), Coordinate(x2, y2)) }
+          case _                                        =>
+            IO.println(
+              s"${Red("Invalid Number!")} Please use the format ${Bold("<x1> <y1>, <x2> <y2>")}"
+            ) *> IO.readLine.flatMap(parseCoordinates)
+        }
+      case _                            =>
+        IO.println(
+          s"${Red("Invalid Input!")} Please use the format ${Bold("<x1> <y1>, <x2> <y2>")}"
+        ) *> IO.readLine.flatMap(parseCoordinates)
+    }
+  }
+
   /** Main Loop of the game
     */
-  def gameLoop(ref: Ref[IO, GameSession]): IO[Unit] = {
-    def validateInput(board: Board, input: String): Either[InputError, (Int, Int, Int, Int)] = {
-      val inputPattern = """^(\d+)\s+(\d+)\s*,\s*(\d+)\s+(\d+)$""".r
-      input match {
-        case inputPattern(x1, y1, x2, y2) => {
-          (x1.toIntOption, y1.toIntOption, x2.toIntOption, y2.toIntOption) match {
-            case (Some(x1), Some(y1), Some(x2), Some(y2)) =>
-              // Check Bounds
-              if (
-                !(x1 > 0 && x1 < (board.length - 1) &&
-                  x2 > 0 && x2 < (board.length - 1) &&
-                  y1 > 0 && y1 < (board(0).length - 1) &&
-                  y2 > 0 && y2 < (board(0).length - 1))
-              ) {
-                Left(OutOfBoundsError)
-              } else
-              // Check Path
-              if (!isValidPath(board, (x1, y1), (x2, y2))) {
-                Left(InvalidMatchError)
-              } else { Right((x1, y1, x2, y2)) }
-            case _                                        => Left(InvalidFormatError)
+  def gameLoop(ref: AtomicCell[IO, GameState]): IO[Unit] = {
+    def loop(ref: AtomicCell[IO, GameState]): IO[Unit] = {
+      for {
+        _               <- IO.println(s"Choose the tiles (${Bold("<x1> <y1>, <x2> <y2>")}): ")
+        input           <- IO.readLine
+        points          <- parseCoordinates(input)
+        (p1, p2)         = points
+        newStateOrError <- ref.evalModify { state =>
+          state.makeMove(p1, p2) match {
+            case e @ Left(_)         =>
+              IO.pure {
+                (state, e)
+              }
+            case s @ Right(newState) =>
+              newState.flatMap { state =>
+                IO.pure {
+                  (state, s)
+                }
+              }
           }
         }
-        case _                            => Left(InvalidFormatError)
-      }
-    }
-
-    def getInputAndUpdateBoard(board: Board): IO[Board] = {
-      for {
-        _            <- IO.println(s"Choose the tiles (${Bold("<x1> <y1>, <x2> <y2>")}): ")
-        input        <- IO.readLine
-        updatedBoard <- validateInput(board, input) match {
-          case Left(InvalidFormatError) =>
-            IO.println(
-              s"${Red("Invalid Input!")} Please use the format ${Bold("<x1> <y1>, <x2> <y2>")}"
-            ) *> (getInputAndUpdateBoard(
-              board
-            ))
-          case Left(OutOfBoundsError)   =>
-            IO.println(
-              Red(s"${Red("Invalid Coordinates!")} Please enter values within the board's limits")
-            ) *> (getInputAndUpdateBoard(
-              board
-            ))
-          case Left(InvalidMatchError)  =>
-            IO.println(
-              Red(
-                s"${Red("Invalid Match!")} The tiles you selected cannot be linked. Please check the path and try again."
-              )
-            ) *> (getInputAndUpdateBoard(board))
-          case Right((x1, y1, x2, y2))  =>
-            val updatedBoard1 = deleteTileFromBoard(board, (x1, y1))
-            val updatedBoard2 = deleteTileFromBoard(updatedBoard1, (x2, y2))
-            IO.pure { updatedBoard2 }
-        }
-      } yield updatedBoard
-    }
-
-    def loop(ref: Ref[IO, GameSession]): IO[Unit] = {
-      for {
-        session      <- ref.get
-        updatedBoard <- getInputAndUpdateBoard(session.board)
-        _            <-
-          if (isEmpty(updatedBoard)) {
-            ref.update(_ => session.copy(updatedBoard, Finished)) *>
-              IO.println(Green(s"Congratulations ${session.player.name}"))
-          } else {
-            for {
-              newBoard <-
-                if (isSolvable(updatedBoard)) { IO.pure { updatedBoard } }
-                else { refreshBoard(updatedBoard) }
-              _        <- ref.update(_ => session.copy(newBoard))
-              _        <- printBoard(newBoard)
-              _        <- loop(ref)
-            } yield ()
-          }
+        _               <- newStateOrError.fold(
+          error =>
+            error match {
+              case GameError.CoordinatesOutOfBounds =>
+                IO.println(
+                  Red(s"${Red("Invalid Coordinates!")} Please enter values within the board's limits")
+                ) *> (loop(ref))
+              case GameError.InvalidMatch           =>
+                IO.println(
+                  Red(
+                    s"${Red("Invalid Match!")} The tiles you selected cannot be linked. Please check the path and try again."
+                  )
+                ) *> (loop(ref))
+              case _                                => IO.println(Red(s"${Red("Unexpected Error!")}"))
+            },
+          newState =>
+            newState.flatMap(state =>
+              state match {
+                case InProgress(_, board, _)     => printBoard(board).flatMap(_ => loop(ref))
+                case GameState.Win(winner, _, _) => IO.println(Green(s"Congratulations ${winner.name}!!!"))
+                case _                           => IO.println(Red(s"${Red("Unexpected Error!")}"))
+              }
+            ),
+        )
       } yield ()
     }
 
     for {
-      session <- ref.get
-      _       <- IO.println(s"${Bold("Goal")}: Clear the board by matching pairs of tiles")
-      _       <- IO.println(s"${Bold("Matching rules:")} ")
-      _       <- IO.println(s" ${Bold("1.")} Tiles can be linked if a clear path exists between them.")
-      _       <- IO.println(s" ${Bold("2.")} The path can bend at most twice and cannot cross other tiles.")
-      _       <- IO.println(
+      stateRef <- ref.get
+      _        <- IO.println(s"${Bold("Goal")}: Clear the board by matching pairs of tiles")
+      _        <- IO.println(s"${Bold("Matching rules:")} ")
+      _        <- IO.println(s" ${Bold("1.")} Tiles can be linked if a clear path exists between them.")
+      _        <- IO.println(s" ${Bold("2.")} The path can bend at most twice and cannot cross other tiles.")
+      _        <- IO.println(
         s"${Bold("How to play:")} Enter coordinates of two tiles to match in the following format: <x1> <y1>,<x2> <y2>"
       )
-      _       <- IO.println(s"${Bold("Example:")} To match tiles at (1, 2) and (3, 4), input: 1 2, 3 4")
-      _       <- IO.println("Good luck!\n")
-      _       <- printBoard(session.board)
-      _       <- loop(ref)
+      _        <- IO.println(s"${Bold("Example:")} To match tiles at (1, 2) and (3, 4), input: 1 2, 3 4")
+      _        <- IO.println("Good luck!\n")
+      _        <- printBoard(stateRef.asInstanceOf[InProgress].board)
+      _        <- loop(ref)
     } yield ()
   }
 
   override def run(args: List[String]): IO[ExitCode] = {
     for {
-      _        <- IO.println("##############################")
-      _        <- IO.println("           Link Game          ")
-      _        <- IO.println("##############################")
-      _        <- IO.print(s"Enter your username: ")
-      username <- IO.readLine
-      player    = Player(username)
-      _        <- IO.println(
+      _            <- IO.println("##############################")
+      _            <- IO.println("           Link Game          ")
+      _            <- IO.println("##############################")
+      _            <- IO.print(s"Enter your username: ")
+      username     <- IO.readLine
+      player        = Player(username)
+      _            <- IO.println(
         s"Choose a game level by entering the corresponding number:\n${Bold("1")} - Easy\n${Bold("2")} - Medium\n${Bold("3")} - Hard"
       )
-      input    <- IO.readLine
-      level    <- parseGameLevel(input)
-      board    <- initBoard(level)
-      stateRef <- Ref.of[IO, GameSession](GameSession(board, InProgress, player))
-      _        <- gameLoop(stateRef)
+      input        <- IO.readLine
+      level        <- parseGameLevel(input)
+      board        <- initBoard(level)
+      startInstant <- IO.realTimeInstant
+      stateRef     <- AtomicCell.apply[IO].of[GameState](InProgress(player, board, startInstant))
+      _            <- gameLoop(stateRef)
+
     } yield ExitCode.Success
   }
 }
