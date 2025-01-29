@@ -2,8 +2,8 @@ package server
 
 import cats.effect.std.{AtomicCell, Queue}
 import cats.effect.{IO, Ref}
-import fs2.Stream
 import fs2.concurrent.Topic
+import fs2.{Pipe, Stream}
 import io.circe.jawn
 import io.circe.syntax.EncoderOps
 import linkgame.game.Board.printBoard
@@ -17,6 +17,7 @@ import org.http4s.server.websocket.WebSocketBuilder2
 import org.http4s.websocket.WebSocketFrame
 
 import java.util.UUID
+import scala.concurrent.duration.DurationInt
 
 object Route {
   def apply(wsb: WebSocketBuilder2[IO], gameRooms: Ref[IO, Map[UUID, AtomicCell[IO, GameRoom]]]): HttpRoutes[IO] =
@@ -49,51 +50,74 @@ object Route {
         for {
           roomId       <- IO(UUID.fromString(roomId))
           maybeRoomRef <- gameRooms.get.map(_.get(roomId))
-          response     <- maybeRoomRef match {
-            case Some(roomRef) =>
-              for {
-                result   <- roomRef.evalModify(_.handleCommand(Command.Join(Player(playerId))))
-                response <- result match {
-                  case Left(error)     => BadRequest(s"Failed to join room $roomId: $error")
-                  case Right(newState) =>
-                    val newStateMessage = WebSocketFrame.Text(newState.asJson.noSpaces)
-
-                    for {
-                      topic    <- roomRef.get.map(_.topic)
-                      queue    <- Queue.unbounded[IO, WebSocketFrame.Text]
-                      _        <- queue.offer(newStateMessage)
-                      _        <- topic.publish1(newStateMessage)
-                      send      = Stream.fromQueueUnterminated(queue) merge topic.subscribeUnbounded
-                      response <- wsb.build(
-                        send = send,
-                        receive = _.foreach {
-                          case text: WebSocketFrame.Text =>
-                            jawn.decode[Request](text.str) match {
-                              case Left(e)        => queue.offer(WebSocketFrame.Text(s"Cannot parse ${text.str} - $e"))
-                              case Right(request) =>
-                                val command = request match {
-                                  case Request.Match(p1, p2) => Command.Match(p1, p2)
-                                }
-                                for {
-                                  newStateOrError <- roomRef.evalModify(_.handleCommand(command))
-                                  _               <- newStateOrError.fold(
-                                    error => queue.offer(WebSocketFrame.Text(s"Failed to handle $request - $error")),
-                                    newState =>
-                                      topic.publish1(WebSocketFrame.Text(newState.asJson.noSpaces))
-                                      // DEBUG
-                                        *> printBoard(newState.asInstanceOf[InProgress].board),
-                                  )
-                                } yield ()
-                            }
-                          case _                         => IO.unit
-                        },
-                      )
-                    } yield response
-                }
-              } yield response
-            case None          => NotFound(s"Room $roomId is not found")
+          response     <- maybeRoomRef.fold(NotFound(s"Room $roomId is not found")) { roomRef =>
+            for {
+              result   <- roomRef.evalModify(_.handleCommand(Command.Join(Player(playerId))))
+              response <- result.fold(
+                error => BadRequest(s"Failed to join room $roomId: $error"),
+                newState =>
+                  for {
+                    topic          <- roomRef.get.map(_.topic)
+                    queue          <- Queue.unbounded[IO, WebSocketFrame]
+                    newStateMessage = WebSocketFrame.Text(newState.asJson.noSpaces)
+                    _              <- queue.offer(newStateMessage)
+                    _              <- topic.publish1(newStateMessage)
+                    response       <- wsb.build(
+                      send = WebSocketHelper.send(topic, queue),
+                      receive = WebSocketHelper.receive(topic, queue, roomRef),
+                    )
+                  } yield response,
+              )
+            } yield response
           }
         } yield response
     }
+
+  private object WebSocketHelper {
+    def send(topic: Topic[IO, WebSocketFrame.Text], queue: Queue[IO, WebSocketFrame]): Stream[IO, WebSocketFrame] =
+      Stream
+        .awakeEvery[IO](30.seconds)
+        .map(_ => WebSocketFrame.Ping())
+        .foreach(queue.offer) merge
+        Stream.fromQueueUnterminated(queue) merge topic.subscribeUnbounded
+
+    def receive(
+      topic: Topic[IO, WebSocketFrame.Text],
+      queue: Queue[IO, WebSocketFrame],
+      roomRef: AtomicCell[IO, GameRoom],
+    ): Pipe[IO, WebSocketFrame, Unit] =
+      _.foreach {
+        case text: WebSocketFrame.Text =>
+          jawn
+            .decode[Request](text.str)
+            .fold(
+              e => queue.offer(WebSocketFrame.Text(s"Cannot parse ${text.str} - $e")),
+              request => handleRequest(request, topic, queue, roomRef),
+            )
+        case _                         => IO.unit
+      }
+
+    private def handleRequest(
+      request: Request,
+      topic: Topic[IO, WebSocketFrame.Text],
+      queue: Queue[IO, WebSocketFrame],
+      roomRef: AtomicCell[IO, GameRoom],
+    ): IO[Unit] = {
+      val command = request match {
+        case Request.Match(p1, p2) => Command.Match(p1, p2)
+      }
+      for {
+        newStateOrError <- roomRef.evalModify(_.handleCommand(command))
+        _               <- newStateOrError.fold(
+          error => queue.offer(WebSocketFrame.Text(s"Failed to handle $request - $error")),
+          newState =>
+            topic.publish1(WebSocketFrame.Text(newState.asJson.noSpaces))
+            // DEBUG
+              *> printBoard(newState.asInstanceOf[InProgress].board),
+        )
+      } yield ()
+    }
+
+  }
 
 }

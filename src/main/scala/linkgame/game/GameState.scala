@@ -5,7 +5,7 @@ import cats.implicits._
 import io.circe.Codec
 import io.circe.generic.extras.Configuration
 import io.circe.generic.extras.semiauto.deriveConfiguredCodec
-import linkgame.game.Board.{Board, deleteTileFromBoard, initBoard, isCoordinateOnBoard, isEmpty, isSolvable, isValidPath, refreshBoard}
+import linkgame.game.Board.{Board, deleteTileFromBoard, initBoard, isCoordinateOnBoard, isEmpty, isSolvable, isValidPath, printBoard, refreshBoard}
 import linkgame.game.GameState.GameError
 import linkgame.player.Player
 
@@ -14,15 +14,19 @@ import java.time.Instant
 sealed trait GameState {
   def join(player: Player): Either[GameError, IO[GameState]] =
     this match {
-      // TODO
+      // TODO multiplayers
       case GameState.AwaitingPlayers(players, gameLevel) =>
         (for {
           start <- IO.realTimeInstant
           board <- initBoard(gameLevel)
+          _     <- printBoard(board)
         } yield GameState.InProgress(player, board, start)).asRight
-      case _: GameState.InProgress                       =>
-        // TODO: Can just Join one time
-        GameError.GameAlreadyStarted.asLeft
+      case inProgress: GameState.InProgress              =>
+        if (player == inProgress.player) {
+          (for {
+            _ <- printBoard(inProgress.board)
+          } yield inProgress).asRight
+        } else { GameError.GameAlreadyStarted.asLeft[IO[GameState]] }
       case _: GameState.Win                              => GameError.GameAlreadyEnded.asLeft
     }
 
@@ -34,7 +38,6 @@ sealed trait GameState {
           _ <- Either.cond(isCoordinateOnBoard(board, p1), (), GameError.CoordinatesOutOfBounds)
           _ <- Either.cond(isCoordinateOnBoard(board, p2), (), GameError.CoordinatesOutOfBounds)
           _ <- Either.cond(isValidPath(board, (p1.row, p1.column), (p2.row, p2.column)), (), GameError.InvalidMatch)
-
         } yield {
           val updatedBoard1 = deleteTileFromBoard(board, p1)
           val updatedBoard2 = deleteTileFromBoard(updatedBoard1, p2)
