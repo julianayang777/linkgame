@@ -5,10 +5,10 @@ import cats.effect.{ExitCode, IO, IOApp}
 import cats.implicits._
 import linkgame.game.Board._
 import linkgame.game.GameLevel.{Easy, Hard, Medium}
-import linkgame.utils.Format._
-import linkgame.game.{Coordinate, GameLevel, GameState}
 import linkgame.game.GameState.{GameError, InProgress}
+import linkgame.game.{Coordinate, GameLevel, GameState}
 import linkgame.player.Player
+import linkgame.utils.Format._
 
 object Main extends IOApp {
 
@@ -58,7 +58,7 @@ object Main extends IOApp {
         points          <- parseCoordinates(input)
         (p1, p2)         = points
         newStateOrError <- ref.evalModify { state =>
-          state.makeMove(p1, p2) match {
+          state.attemptMatch(p1, p2) match {
             case e @ Left(_)         =>
               IO.pure {
                 (state, e)
