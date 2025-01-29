@@ -10,7 +10,7 @@ final case class GameRoom(state: GameState, topic: Topic[IO, WebSocketFrame.Text
   def handleCommand(c: Command): IO[(GameRoom, Either[GameState.GameError, GameState])] = {
     val newStateOrError: Either[GameState.GameError, IO[GameState]] = c match {
       case Command.Join(player)  => state.join(player)
-      case Command.Match(p1, p2) => state.attemptMatch(p1, p2)
+      case Command.Match(player, p1, p2) => state.attemptMatch(player, p1, p2)
     }
     newStateOrError match {
       case Left(error)     => IO.pure { (this, error.asLeft) }
