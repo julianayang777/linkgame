@@ -71,6 +71,15 @@ object Route {
             } yield response
           }
         } yield response
+
+      case GET -> Root / "game" / roomId / "status" =>
+        for {
+          roomId       <- IO(UUID.fromString(roomId))
+          maybeRoomRef <- gameRooms.get.map(_.get(roomId))
+          response     <- maybeRoomRef.fold(NotFound(s"Room $roomId is not found")) { roomRef =>
+            roomRef.get.flatMap(room => Ok(room.state.asJson))
+          }
+        } yield response
     }
 
   private object WebSocketHelper {
@@ -119,5 +128,4 @@ object Route {
     }
 
   }
-
 }
