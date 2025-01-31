@@ -9,8 +9,9 @@ import org.http4s.websocket.WebSocketFrame
 final case class GameRoom(state: GameState, topic: Topic[IO, WebSocketFrame.Text]) {
   def handleCommand(c: Command): IO[(GameRoom, Either[GameState.GameError, GameState])] = {
     val newStateOrError: Either[GameState.GameError, IO[GameState]] = c match {
-      case Command.Join(player)  => state.join(player)
+      case Command.Join(player)          => state.join(player)
       case Command.Match(player, p1, p2) => state.attemptMatch(player, p1, p2)
+      case Command.StartGame             => state.startGame
     }
     newStateOrError match {
       case Left(error)     => IO.pure { (this, error.asLeft) }

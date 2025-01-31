@@ -2,13 +2,15 @@ package server
 
 import cats.effect.std.{AtomicCell, Queue}
 import cats.effect.{IO, Ref}
+import cats.syntax.all._
 import fs2.concurrent.Topic
 import fs2.{Pipe, Stream}
 import io.circe.jawn
 import io.circe.syntax.EncoderOps
 import linkgame.game.Board.printBoard
+import linkgame.game.Command.StartGame
 import linkgame.game.GameState.{AwaitingPlayers, InProgress}
-import linkgame.game.{Command, GameLevel}
+import linkgame.game.{Command, GameLevel, GameState}
 import linkgame.player.Player
 import org.http4s.HttpRoutes
 import org.http4s.circe.CirceEntityCodec._
@@ -51,7 +53,7 @@ object Route {
           roomId       <- IO(UUID.fromString(roomId))
           maybeRoomRef <- gameRooms.get.map(_.get(roomId))
           // FIXME: always creating a new player
-          player = Player(playerId)
+          player        = Player(playerId)
           response     <- maybeRoomRef.fold(NotFound(s"Room $roomId is not found")) { roomRef =>
             for {
               result   <- roomRef.evalModify(_.handleCommand(Command.Join(player)))
@@ -64,6 +66,7 @@ object Route {
                     newStateMessage = WebSocketFrame.Text(newState.asJson.noSpaces)
                     _              <- queue.offer(newStateMessage)
                     _              <- topic.publish1(newStateMessage)
+                    _              <- WebSocketHelper.scheduleStartGameIfNeeded(newState, roomRef, topic)
                     response       <- wsb.build(
                       send = WebSocketHelper.send(topic, queue),
                       receive = WebSocketHelper.receive(player, topic, queue, roomRef),
@@ -128,16 +131,39 @@ object Route {
         newStateOrError <- roomRef.evalModify(_.handleCommand(command))
         _               <- newStateOrError.fold(
           error => queue.offer(WebSocketFrame.Text(s"Failed to handle $request - $error")),
-          newState =>
-            topic.publish1(WebSocketFrame.Text(newState.asJson.noSpaces))
-            // DEBUG
-              *> newState
+          newState => {
+            for {
+              // _ <- scheduleStartGameIfNeeded(newState, roomRef, topic)
+              _ <- topic.publish1(WebSocketFrame.Text(newState.asJson.noSpaces))
+              _ <- newState
                 .asInstanceOf[InProgress]
                 .playerBoards
                 .get(player)
-                .fold(IO.println("Unexpected Error!"))(printBoard),
+                .fold(IO.println("Unexpected Error!"))(printBoard)
+            } yield ()
+          },
         )
       } yield ()
+    }
+
+    def scheduleStartGameIfNeeded(
+      gameState: GameState,
+      roomRef: AtomicCell[IO, GameRoom],
+      topic: Topic[IO, WebSocketFrame.Text],
+    ): IO[Unit] = {
+      gameState match {
+        case state: GameState.GameStartsSoon =>
+          val schedule = for {
+            _               <- IO.sleep(state.startIn)
+            newStateOrError <- roomRef.evalModify(_.handleCommand(StartGame))
+            _               <- newStateOrError.traverse_ { newState =>
+              topic.publish1(WebSocketFrame.Text(newState.asJson.noSpaces))
+            }
+          } yield ()
+          // Start a fiber to not block the "main" server
+          schedule.start.void
+        case _                               => IO.unit
+      }
     }
 
   }
