@@ -133,13 +133,14 @@ object Route {
           error => queue.offer(WebSocketFrame.Text(s"Failed to handle $request - $error")),
           newState => {
             for {
-              // _ <- scheduleStartGameIfNeeded(newState, roomRef, topic)
               _ <- topic.publish1(WebSocketFrame.Text(newState.asJson.noSpaces))
-              _ <- newState
-                .asInstanceOf[InProgress]
-                .playerBoards
-                .get(player)
-                .fold(IO.println("Unexpected Error!"))(printBoard)
+              _ <- newState match {
+                case inProgress: InProgress =>
+                  inProgress.playerBoards
+                    .get(player)
+                    .fold(IO.println("Unexpected Error!"))(printBoard)
+                case _                      => IO.unit
+              }
             } yield ()
           },
         )
