@@ -2,9 +2,9 @@ package server
 
 import com.comcast.ip4s.{Host, Hostname, Port}
 import pureconfig._
+import pureconfig.module.ip4s._
 import pureconfig.error.CannotConvert
 import pureconfig.generic.semiauto.deriveReader
-import pureconfig.module.ip4s._
 import server.Config.SecretConfigValue
 
 import scala.concurrent.duration.FiniteDuration
@@ -13,8 +13,8 @@ case class Config(
   serverPort: Port,
   serverHost: Host,
   jwtSecret: SecretConfigValue[String],
-  jwtExpirationTime: FiniteDuration
-                 )
+  jwtExpirationTime: FiniteDuration,
+)
 
 object Config {
   case class SecretConfigValue[T](value: T) extends AnyVal {
@@ -32,9 +32,8 @@ object Config {
     ConfigReader.fromString(str =>
       Hostname.fromString(str) match {
         case Some(hostname) => Right(hostname)
-        case None => Left(CannotConvert(str, "Hostname", "Invalid hostname"))
+        case None           => Left(CannotConvert(str, "Hostname", "Invalid hostname"))
       }
     )
 
 }
-
