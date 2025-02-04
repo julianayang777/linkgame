@@ -25,8 +25,6 @@ object PlayerService {
       override def addPlayer(name: String): IO[Either[PlayerError, (PlayerId, Player)]] = {
         val id = name
         for {
-          // id     <- IO.randomUUID
-          // player  = Player(name)
           result <- playersRef.modify { players =>
             val player = Player(name)
             if (players.contains(id)) (players, PlayerAlreadyExists.asLeft)

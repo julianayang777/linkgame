@@ -24,15 +24,16 @@ object AuthRoutes {
 
       case POST -> Root / "auth" / "login" / username =>
         for {
-          // loginResult <- authService.login(UUID.fromString(username))
           loginResult <- authService.login(username)
           response    <- loginResult match {
             case Left(e)          => BadRequest(e.toString)
             case Right(authToken) => Ok(authToken)
           }
         } yield response
+
     } <+> authMiddleware {
-      AuthedRoutes.of[PlayerId, IO] { case GET -> Root / "auth" / "info" as playerId =>
+      AuthedRoutes.of[PlayerId, IO] {
+        case GET -> Root / "auth" / "info" as playerId =>
         Ok(s"Hello, $playerId")
       }
     }

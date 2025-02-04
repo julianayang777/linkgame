@@ -8,6 +8,9 @@ import pdi.jwt.{JwtAlgorithm, JwtClaim}
 import server.Config.SecretConfigValue
 import server.player.PlayerService.PlayerId
 
+import java.util.UUID
+import scala.util.Try
+
 object AuthMiddleware {
   def apply(jwtSecret: SecretConfigValue[String]): org.http4s.server.AuthMiddleware[IO, PlayerId] = {
     val jwtAuth = JwtAuth.hmac(jwtSecret.value, JwtAlgorithm.HS512)
@@ -15,11 +18,6 @@ object AuthMiddleware {
       (_: JwtToken) =>
         (claim: JwtClaim) =>
           claim.subject.pure[IO]
-//          claim.subject match {
-//            case Some(id) =>
-//            IO(Try(UUID.fromString(id)).toOption)
-//            case None => none.pure[IO]
-//          }
     }
 
     JwtAuthMiddleware[IO, PlayerId](jwtAuth, authenticate)
