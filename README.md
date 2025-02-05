@@ -42,7 +42,7 @@ There are two entry points: one is for console based and another one is for serv
 ```json
 {
   "type": "SignUp",
-  "username": <username>
+  "username": "<username>"
 }
 ```
 
@@ -66,11 +66,12 @@ There are two entry points: one is for console based and another one is for serv
 ```json
 {
   "type": "Match",
-  "p1": { "row": <int>, "column": <int> }, // Coordinates of the first tile
-  "p2": { "row": <int>, "column": <int> }  // Coordinates of the second tile
+  "p1": { "row": "<int>", "column": "<int>" }, 
+  "p2": { "row": "<int>", "column": "<int>" } 
 }
 ```
 where p1 is the coordinates of the first tile and p2 is the coordinates of the second tile.
+
 - **GET** `localhost:8080/game/<roomId>/status` - retrieve game room state.
   - `<roomId>` - retrieved from `/game/create/<level>`
   - **Require:** Valid JWT token in the Authorization header (retrieve from `/auth/login/<username>` response)
