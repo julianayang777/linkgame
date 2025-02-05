@@ -9,7 +9,7 @@ import io.circe.jawn
 import io.circe.syntax.EncoderOps
 import linkgame.game.Board.printBoard
 import linkgame.game.Command.StartGame
-import linkgame.game.GameState.{AwaitingPlayers, InProgress}
+import linkgame.game.GameState.{AwaitingPlayers, InProgress, Win}
 import linkgame.game.{Command, GameLevel, GameState}
 import linkgame.player.Player
 import org.http4s.circe.CirceEntityCodec._
@@ -18,6 +18,7 @@ import org.http4s.server.AuthMiddleware
 import org.http4s.server.websocket.WebSocketBuilder2
 import org.http4s.websocket.WebSocketFrame
 import org.http4s.{AuthedRoutes, HttpRoutes}
+import server.leaderboard.LeaderboardService
 import server.player.PlayerService
 import server.player.PlayerService.PlayerId
 
@@ -29,11 +30,12 @@ object GameRoutes {
     wsb: WebSocketBuilder2[IO],
     gameRooms: Ref[IO, Map[UUID, AtomicCell[IO, GameRoom]]],
     playerService: PlayerService,
+    leaderboardService: LeaderboardService,
     authMiddleware: AuthMiddleware[IO, PlayerId],
   ): HttpRoutes[IO] =
     authMiddleware(
       AuthedRoutes.of[PlayerId, IO] {
-        /** curl -XPOST "localhost:8080/game/create/<level>
+        /** curl -XPOST "localhost:8080/game/create/<level>"
           * <level> := "easy" | "medium" | "hard"
           * Response:
           * - roomId - used to identify the room in the future plays
@@ -44,7 +46,7 @@ object GameRoutes {
             topic    <- Topic[IO, WebSocketFrame.Text]
             roomRef  <- AtomicCell
               .apply[IO]
-              .of[GameRoom](GameRoom(state = AwaitingPlayers(Set.empty, level), topic = topic))
+              .of[GameRoom](GameRoom(state = AwaitingPlayers(level, Set.empty), topic = topic))
             _        <- gameRooms.update(_.updated(roomId, roomRef))
             response <- Created(roomId.toString)
           } yield response
@@ -79,7 +81,7 @@ object GameRoutes {
                           _              <- WebSocketHelper.scheduleStartGameIfNeeded(newState, roomRef, topic)
                           response       <- wsb.build(
                             send = WebSocketHelper.send(topic, queue),
-                            receive = WebSocketHelper.receive(player, topic, queue, roomRef),
+                            receive = WebSocketHelper.receive(player, topic, queue, roomRef, leaderboardService),
                           )
                         } yield response,
                     )
@@ -88,7 +90,7 @@ object GameRoutes {
             )
           } yield response
 
-        /** curl "localhost:8080/game/<roomID>/status
+        /** curl "localhost:8080/game/<roomID>/status"
           * <roomId>   UUID, should be valid and a room associated with it
           * Response:
           * - GameStatus
@@ -116,6 +118,7 @@ object GameRoutes {
       topic: Topic[IO, WebSocketFrame.Text],
       queue: Queue[IO, WebSocketFrame],
       roomRef: AtomicCell[IO, GameRoom],
+      leaderboardService: LeaderboardService,
     ): Pipe[IO, WebSocketFrame, Unit] =
       _.foreach {
         case text: WebSocketFrame.Text =>
@@ -123,7 +126,7 @@ object GameRoutes {
             .decode[Request](text.str)
             .fold(
               e => queue.offer(WebSocketFrame.Text(s"Cannot parse ${text.str} - $e")),
-              request => handleRequest(player, request, topic, queue, roomRef),
+              request => handleRequest(player, request, topic, queue, roomRef, leaderboardService),
             )
         case _                         => IO.unit
       }
@@ -134,9 +137,11 @@ object GameRoutes {
       topic: Topic[IO, WebSocketFrame.Text],
       queue: Queue[IO, WebSocketFrame],
       roomRef: AtomicCell[IO, GameRoom],
+      leaderboardService: LeaderboardService,
     ): IO[Unit] = {
       val command = request match {
         case Request.Match(p1, p2) => Command.Match(player, p1, p2)
+        case _                     => Command.InvalidCommand
       }
       for {
         newStateOrError <- roomRef.evalModify(_.handleCommand(command))
@@ -146,11 +151,13 @@ object GameRoutes {
             for {
               _ <- topic.publish1(WebSocketFrame.Text(newState.asJson.noSpaces))
               _ <- newState match {
-                case inProgress: InProgress =>
+                case inProgress: InProgress                 =>
                   inProgress.playerBoards
                     .get(player)
                     .fold(IO.println("Unexpected Error!"))(printBoard)
-                case _                      => IO.unit
+                case Win(gameLevel, player, completionTime) =>
+                  leaderboardService.addScore(gameLevel, player.name, completionTime.toMillis)
+                case _                                      => IO.unit
               }
             } yield ()
           },

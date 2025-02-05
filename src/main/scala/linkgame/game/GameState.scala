@@ -18,10 +18,10 @@ sealed trait GameState {
 
   def join(player: Player): Either[GameError, IO[GameState]] =
     this match {
-      case GameState.AwaitingPlayers(players, gameLevel) =>
+      case GameState.AwaitingPlayers(gameLevel, players) =>
         val newPlayers = players + player
-        if (newPlayers.size < maxPlayersPerRoom) GameState.AwaitingPlayers(newPlayers, gameLevel).pure[IO].asRight
-        else GameState.GameStartsSoon(newPlayers, gameLevel, countDownDuration).pure[IO].asRight
+        if (newPlayers.size < maxPlayersPerRoom) GameState.AwaitingPlayers(gameLevel, newPlayers).pure[IO].asRight
+        else GameState.GameStartsSoon(gameLevel, newPlayers, countDownDuration).pure[IO].asRight
       case inProgress: GameState.InProgress              =>
         Either.cond(inProgress.playerBoards.contains(player), inProgress.pure[IO], GameError.GameAlreadyStarted)
       case startSoon: GameState.GameStartsSoon           =>
@@ -31,7 +31,7 @@ sealed trait GameState {
 
   def attemptMatch(player: Player, p1: Coordinate, p2: Coordinate): Either[GameError, IO[GameState]] = {
     this match {
-      case inProgress @ GameState.InProgress(playerBoards, startInstant) =>
+      case inProgress @ GameState.InProgress(gameLevel, playerBoards, startInstant) =>
         val board = playerBoards.get(player).toRight(GameError.PlayerNotInRoom)
         for {
           board <- board
@@ -43,33 +43,34 @@ sealed trait GameState {
           val updatedBoard2 = deleteTileFromBoard(updatedBoard1, p2)
           if (isEmpty(updatedBoard2)) {
             for {
-              end <- IO.realTimeInstant
-            } yield (GameState.Win(player, startInstant, end))
+              end           <- IO.realTimeInstant
+              completionTime = (end.toEpochMilli - startInstant.toEpochMilli).millis
+            } yield GameState.Win(gameLevel, player, completionTime)
           } else {
             for {
               newBoard        <-
                 if (isSolvable(updatedBoard2)) { IO.pure { updatedBoard2 } }
                 else { refreshBoard(updatedBoard2) }
               newPlayersBoards = playerBoards.updated(player, newBoard)
-            } yield (inProgress.copy(playerBoards = newPlayersBoards))
+            } yield inProgress.copy(playerBoards = newPlayersBoards)
           }
         }
-      case _: GameState.GameStartsSoon                                   => GameError.GameNotStarted.asLeft
-      case _: GameState.AwaitingPlayers                                  => GameError.GameNotStarted.asLeft
-      case _: GameState.Win                                              => GameError.GameAlreadyEnded.asLeft
+      case _: GameState.GameStartsSoon                                              => GameError.GameNotStarted.asLeft
+      case _: GameState.AwaitingPlayers                                             => GameError.GameNotStarted.asLeft
+      case _: GameState.Win                                                         => GameError.GameAlreadyEnded.asLeft
     }
   }
 
   def startGame: Either[GameError, IO[GameState]] =
     this match {
-      case GameState.GameStartsSoon(players, gameLevel, _) =>
+      case GameState.GameStartsSoon(gameLevel, players, _) =>
         (for {
           start       <- IO.realTimeInstant
           board       <- initBoard(gameLevel)
           _           <- printBoard(board)
           _           <- IO.println("finish creating board")
           playerBoards = players.map(_ -> board).toMap
-        } yield GameState.InProgress(playerBoards, start)).asRight
+        } yield GameState.InProgress(gameLevel, playerBoards, start)).asRight
       case _: GameState.Win                                => GameError.GameAlreadyEnded.asLeft
       case _: GameState.InProgress                         => GameError.GameNotStarted.asLeft
       case _: GameState.AwaitingPlayers                    => GameError.GameNotStarted.asLeft
@@ -78,15 +79,14 @@ sealed trait GameState {
 
 object GameState {
 
-  sealed trait GameError
+  final case class AwaitingPlayers(gameLevel: GameLevel, players: Set[Player]) extends GameState
 
-  final case class AwaitingPlayers(players: Set[Player], gameLevel: GameLevel) extends GameState
+  final case class GameStartsSoon(gameLevel: GameLevel, players: Set[Player], startIn: FiniteDuration) extends GameState
 
-  final case class GameStartsSoon(players: Set[Player], gameLevel: GameLevel, startIn: FiniteDuration) extends GameState
+  final case class InProgress(gameLevel: GameLevel, playerBoards: Map[Player, Board], startInstant: Instant)
+      extends GameState
 
-  final case class InProgress(playerBoards: Map[Player, Board], startInstant: Instant) extends GameState
-
-  final case class Win(winner: Player, startInstant: Instant, endInstant: Instant) extends GameState
+  final case class Win(gameLevel: GameLevel, winner: Player, completionTime: FiniteDuration) extends GameState
 
   implicit val finiteDurationEncoder: Encoder[FiniteDuration] = Encoder.encodeLong.contramap[FiniteDuration](_.toMillis)
   implicit val finiteDurationDecoder: Decoder[FiniteDuration] = Decoder.decodeLong.emap {
@@ -97,6 +97,8 @@ object GameState {
   implicit val playerBoardMapCodec: Encoder[Map[Player, Board]]   = Encoder.encodeMap[Player, Board]
   implicit val playerBoardMapDecoder: Decoder[Map[Player, Board]] = Decoder.decodeMap[Player, Board]
 
+  sealed trait GameError
+
   object GameError {
     case object GameAlreadyStarted     extends GameError
     case object GameAlreadyEnded       extends GameError
@@ -104,6 +106,7 @@ object GameState {
     case object CoordinatesOutOfBounds extends GameError
     case object InvalidMatch           extends GameError
     case object PlayerNotInRoom        extends GameError
+    case object InvalidRequest         extends GameError
   }
 
   implicit val codec: Codec[GameState] = {

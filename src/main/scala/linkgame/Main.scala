@@ -89,12 +89,13 @@ object Main extends IOApp {
           newState =>
             newState.flatMap(state =>
               state match {
-                case InProgress(playerBoards, _)     =>
-                playerBoards.get(player).fold(IO.println(Red(s"${Red("Unexpected Error!")}"))){
-                  board => printBoard(board).flatMap(_ => loop(ref))
-                }
-                case GameState.Win(winner, _, _) => IO.println(Green(s"Congratulations ${winner.name}!!!"))
-                case _                           => IO.println(Red(s"${Red("Unexpected Error!")}"))
+                case InProgress(_, playerBoards, _)           =>
+                  playerBoards.get(player).fold(IO.println(Red(s"${Red("Unexpected Error!")}"))) { board =>
+                    printBoard(board).flatMap(_ => loop(ref))
+                  }
+                case GameState.Win(_, winner, completionTime) =>
+                  IO.println(Green(s"Congratulations ${winner.name}!!! Time taken: ${completionTime}"))
+                case _                                        => IO.println(Red(s"${Red("Unexpected Error!")}"))
               }
             ),
         )
@@ -112,7 +113,11 @@ object Main extends IOApp {
       )
       _        <- IO.println(s"${Bold("Example:")} To match tiles at (1, 2) and (3, 4), input: 1 2, 3 4")
       _        <- IO.println("Good luck!\n")
-      _        <- stateRef.asInstanceOf[InProgress].playerBoards.get(player).fold(IO.println(Red(s"${Red("Unexpected Error!")}")))(printBoard)
+      _        <- stateRef
+        .asInstanceOf[InProgress]
+        .playerBoards
+        .get(player)
+        .fold(IO.println(Red(s"${Red("Unexpected Error!")}")))(printBoard)
       _        <- loop(ref)
     } yield ()
   }
@@ -132,7 +137,7 @@ object Main extends IOApp {
       level        <- parseGameLevel(input)
       board        <- initBoard(level)
       startInstant <- IO.realTimeInstant
-      stateRef     <- AtomicCell.apply[IO].of[GameState](InProgress(Map(player -> board), startInstant))
+      stateRef     <- AtomicCell.apply[IO].of[GameState](InProgress(level, Map(player -> board), startInstant))
       _            <- gameLoop(player, stateRef)
 
     } yield ExitCode.Success
