@@ -13,14 +13,13 @@ import java.time.Instant
 import scala.concurrent.duration.{DurationLong, FiniteDuration}
 
 sealed trait GameState {
-  private val maxPlayersPerRoom: Int            = 2
   private val countDownDuration: FiniteDuration = 5.seconds
 
   def join(player: Player): Either[GameError, IO[GameState]] =
     this match {
-      case GameState.AwaitingPlayers(gameLevel, players) =>
+      case state @ GameState.AwaitingPlayers(gameLevel, requiredPlayers, players) =>
         val newPlayers = players + player
-        if (newPlayers.size < maxPlayersPerRoom) GameState.AwaitingPlayers(gameLevel, newPlayers).pure[IO].asRight
+        if (newPlayers.size < requiredPlayers) state.copy(players = newPlayers).pure[IO].asRight
         else GameState.GameStartsSoon(gameLevel, newPlayers, countDownDuration).pure[IO].asRight
       case inProgress: GameState.InProgress              =>
         Either.cond(inProgress.playerBoards.contains(player), inProgress.pure[IO], GameError.GameAlreadyStarted)
@@ -68,7 +67,6 @@ sealed trait GameState {
           start       <- IO.realTimeInstant
           board       <- initBoard(gameLevel)
           _           <- printBoard(board)
-          _           <- IO.println("finish creating board")
           playerBoards = players.map(_ -> board).toMap
         } yield GameState.InProgress(gameLevel, playerBoards, start)).asRight
       case _: GameState.Win                                => GameError.GameAlreadyEnded.asLeft
@@ -79,7 +77,7 @@ sealed trait GameState {
 
 object GameState {
 
-  final case class AwaitingPlayers(gameLevel: GameLevel, players: Set[Player]) extends GameState
+  final case class AwaitingPlayers(gameLevel: GameLevel, requiredPlayers: Int, players: Set[Player]) extends GameState
 
   final case class GameStartsSoon(gameLevel: GameLevel, players: Set[Player], startIn: FiniteDuration) extends GameState
 

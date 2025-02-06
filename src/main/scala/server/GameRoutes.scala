@@ -35,21 +35,26 @@ object GameRoutes {
   ): HttpRoutes[IO] =
     authMiddleware(
       AuthedRoutes.of[PlayerId, IO] {
-        /** curl -XPOST "localhost:8080/game/create/<level>"
+        /** curl -XPOST "localhost:8080/game/create/<nplayers>/<level>"
+          * <nplayers> - number of players to start the room
           * <level> := "easy" | "medium" | "hard"
           * Response:
           * - roomId - used to identify the room in the future plays
           */
-        case POST -> Root / "game" / "create" / GameLevel(level) as _ =>
-          for {
-            roomId   <- IO.randomUUID
-            topic    <- Topic[IO, WebSocketFrame.Text]
-            roomRef  <- AtomicCell
-              .apply[IO]
-              .of[GameRoom](GameRoom(state = AwaitingPlayers(level, Set.empty), topic = topic))
-            _        <- gameRooms.update(_.updated(roomId, roomRef))
-            response <- Created(roomId.toString)
-          } yield response
+        case POST -> Root / "game" / "create" / nplayers / GameLevel(level) as _ =>
+          nplayers.toIntOption match {
+            case Some(requiredPlayers) =>
+              for {
+                roomId   <- IO.randomUUID
+                topic    <- Topic[IO, WebSocketFrame.Text]
+                roomRef  <- AtomicCell
+                  .apply[IO]
+                  .of[GameRoom](GameRoom(state = AwaitingPlayers(level, requiredPlayers, Set.empty), topic = topic))
+                _        <- gameRooms.update(_.updated(roomId, roomRef))
+                response <- Created(roomId.toString)
+              } yield response
+            case None                  => ???
+          }
 
         /** websocat -c "ws://localhost:8080/game/join/<roomId>"
           * <roomId>   UUID, should be valid and a room associated with it
@@ -58,7 +63,7 @@ object GameRoutes {
           * Response if valid:
           * - GameStatus
           */
-        case GET -> Root / "game" / "join" / roomId as playerId       =>
+        case GET -> Root / "game" / "join" / roomId as playerId                  =>
           for {
             roomId       <- IO(UUID.fromString(roomId))
             maybeRoomRef <- gameRooms.get.map(_.get(roomId))
@@ -95,7 +100,7 @@ object GameRoutes {
           * Response:
           * - GameStatus
           */
-        case GET -> Root / "game" / roomId / "status" as _            =>
+        case GET -> Root / "game" / roomId / "status" as _                       =>
           for {
             roomId       <- IO(UUID.fromString(roomId))
             maybeRoomRef <- gameRooms.get.map(_.get(roomId))

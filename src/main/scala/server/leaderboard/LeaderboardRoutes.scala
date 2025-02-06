@@ -23,11 +23,8 @@ object LeaderboardRoutes {
     } <+> authMiddleware(
       AuthedRoutes.of[PlayerId, IO] { case GET -> Root / "leaderboard" / "player" / "best-scores" as playerId =>
         for {
-          scoresResult <- leaderboardService.getBestScore(playerId)
-          response     <- scoresResult match {
-            case Left(e)       => BadRequest(e.toString)
-            case Right(scores) => Ok(scores)
-          }
+          scores <- leaderboardService.getBestScore(playerId)
+          response <- Ok(scores)
         } yield response
 
       }
