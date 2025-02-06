@@ -1,26 +1,44 @@
 package server.auth
 
+import cats.data.{Kleisli, OptionT}
 import cats.effect.IO
-import cats.syntax.all._
-import dev.profunktor.auth.JwtAuthMiddleware
-import dev.profunktor.auth.jwt.{JwtAuth, JwtToken}
-import pdi.jwt.{JwtAlgorithm, JwtClaim}
+import org.http4s.Credentials.Token
+import org.http4s.headers.Authorization
+import org.http4s.{AuthScheme, Request}
+import pdi.jwt.{Jwt, JwtAlgorithm, JwtOptions}
 import server.Config.SecretConfigValue
 import server.player.PlayerService.PlayerId
 
-import java.util.UUID
-import scala.util.Try
-
 object AuthMiddleware {
   def apply(jwtSecret: SecretConfigValue[String]): org.http4s.server.AuthMiddleware[IO, PlayerId] = {
-    val jwtAuth = JwtAuth.hmac(jwtSecret.value, JwtAlgorithm.HS512)
-    val authenticate: JwtToken => JwtClaim => IO[Option[PlayerId]] = {
-      (_: JwtToken) =>
-        (claim: JwtClaim) =>
-          claim.subject.pure[IO]
+    def getBearerToken(request: Request[IO]): Option[String] =
+      request.headers
+        .get[Authorization]
+        .collect { case Authorization(Token(AuthScheme.Bearer, token)) => token }
+        .orElse {
+          // Fallback for WS routes
+          request.params.get("authToken")
+        }
+
+    val authUser = Kleisli { request: Request[IO] =>
+      for {
+        token    <- OptionT.fromOption[IO](getBearerToken(request))
+        jwtClaim <- OptionT(
+          IO.delay {
+            Jwt
+              .decode(
+                token = token,
+                key = jwtSecret.value,
+                algorithms = Seq(JwtAlgorithm.HS512),
+                options = JwtOptions.DEFAULT,
+              )
+              .toOption
+          }
+        )
+        username <- OptionT.fromOption[IO](jwtClaim.subject)
+      } yield username
     }
 
-    JwtAuthMiddleware[IO, PlayerId](jwtAuth, authenticate)
+    org.http4s.server.AuthMiddleware.withFallThrough(authUser)
   }
-
 }

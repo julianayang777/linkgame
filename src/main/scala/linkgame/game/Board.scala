@@ -86,7 +86,7 @@ object Board {
     * - Out of bounds (outside the board dimensions)
     * - On one of the border cells
     */
-  def isCoordinateOnBoard(board: Board, coordinate: Coordinate) = {
+  def isCoordinateOnBoard(board: Board, coordinate: Coordinate): Boolean = {
     val rows = board.size - 1
     val cols = board.headOption.map(_.size - 1).getOrElse(0)
     coordinate.row > 0 && coordinate.row < rows && coordinate.column > 0 && coordinate.column < cols
