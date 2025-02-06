@@ -11,7 +11,11 @@ There are three levels in this game:
 
 ### Example of Matching Rules
 
-TODO
+Below are examples of how tiles can be correctly matched in **LinkGame**, 
+as well as cases where they cannot be matched:
+
+![ValidMatchingExamples](./img/ValidMatchingExamples.png)
+![InvalidMatchingExamples](./img/InvalidMatchingExamples.png)
 
 ## Prerequisites
 
@@ -54,7 +58,8 @@ There are two entry points: one is for console based and another one is for serv
 
 #### Game
 
-- **POST** `localhost:8080/game/create/<level>` - create a game
+- **POST** `localhost:8080/game/create/<requiresPlayers>/<level>` - create a game
+    - `<requiredPlayers>` - number of players required to start the game.
     - `<level>` can be `easy`, `medium` or `hard`
     - **Require:** Valid JWT token in the Authorization header (retrieve from `/auth/login/<username>` response)
 
@@ -75,3 +80,13 @@ where p1 is the coordinates of the first tile and p2 is the coordinates of the s
 - **GET** `localhost:8080/game/<roomId>/status` - retrieve game room state.
   - `<roomId>` - retrieved from `/game/create/<level>`
   - **Require:** Valid JWT token in the Authorization header (retrieve from `/auth/login/<username>` response)
+
+#### Leaderboard
+
+- **GET** `localhost:8080/leaderboard/<level>/top/<topN>` - retrieves the leaderboard of a specified level.
+  - `<level>` can be `easy`, `medium` or `hard`
+  - `<topN>` - number of top players to retrieve from the leaderboard.
+
+- **GET** `localhost:8080/player/best-scores` - retrieves the best scores of the player from each level.
+  - **Require:** Valid JWT token in the Authorization header (retrieve from `/auth/login/<username>` response)
+
