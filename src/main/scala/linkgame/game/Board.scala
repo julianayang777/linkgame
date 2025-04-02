@@ -2,10 +2,15 @@ package linkgame.game
 
 import cats.effect.IO
 import cats.effect.std.Random
+import io.circe.Codec
+import io.circe.generic.semiauto.deriveCodec
 
 object Board {
 
   type Board = Vector[Vector[Int]]
+  final case class Path(points: List[(Int, Int)]) // Coordinates of start, end and turned points
+
+  implicit val codec: Codec[Path]                 = deriveCodec
 
   /** Randomly initializes the game board based on the selected level.
     * The generated board have a border of zeros's around
@@ -165,6 +170,60 @@ object Board {
     basicCondition() && (matchStraightLine() || matchOneTurnLine() || matchTwoTurnLine())
   }
 
+  def getValidPath(board: Board, p1: (Int, Int), p2: (Int, Int)): Option[Path] = {
+    def isEmpty(p: (Int, Int)): Boolean = board(p._1)(p._2) == 0
+
+    def basicCondition(a: (Int, Int) = p1, b: (Int, Int) = p2): Boolean = {
+      val (x1, y1) = a
+      val (x2, y2) = b
+
+      a != b && board(x1)(y1) == board(x2)(y2) && !isEmpty(a) && !isEmpty(b)
+    }
+
+    def matchStraightLine(a: (Int, Int) = p1, b: (Int, Int) = p2): Option[Path] = {
+      val (x1, y1) = a
+      val (x2, y2) = b
+      if (x1 == x2) {
+        if(((y1.min(y2) + 1) until y1.max(y2)).forall(y => isEmpty((x1, y)))) Some(Path(List(a, b))) else None
+      } else if (y1 == y2) {
+        if (((x1.min(x2) + 1) until x1.max(x2)).forall(x => isEmpty((x, y1)))) Some(Path(List(a, b))) else None
+      } else {
+        None
+      }
+    }
+
+    def matchOneTurnLine(a: (Int, Int) = p1, b: (Int, Int) = p2): Option[Path] = {
+      // the turn must occur at point c = (x1, y2) or c = (x2, y1)
+      // a -> c -> b
+      val c = (a._1, b._2)
+      val d = (b._1, a._2)
+      if(isEmpty(c) && matchStraightLine(a, c).isDefined && matchStraightLine(c, b).isDefined)
+        Some(Path(List(a, c, b)))
+      else if (isEmpty(d) && matchStraightLine(a, d).isDefined && matchStraightLine(d, b).isDefined)
+        Some(Path(List(a, d, b)))
+      else None
+    }
+
+    def matchTwoTurnLine(a: (Int, Int) = p1, b: (Int, Int) = p2): Option[Path] = {
+      val candidates = board.indices.flatMap(i => List((i, a._2), (i, b._2))) ++
+        board.head.indices.flatMap(j => List((a._1, j), (b._1, j)))
+
+      candidates.distinct.view.flatMap{ c =>
+        if (!isEmpty(c)) None
+        else matchStraightLine(a, c).flatMap{ path1 =>
+          matchOneTurnLine(c, b).map{ path2 =>
+            Path(path1.points ++ path2.points.tail)
+          }
+        }
+      }.headOption
+    }
+
+    if (basicCondition()) {
+      matchStraightLine().orElse(matchOneTurnLine()).orElse(matchTwoTurnLine())
+    } else {
+      None
+    }
+  }
   /** Checks if there is at least one valid match.
     */
   def isSolvable(board: Board): Boolean = {

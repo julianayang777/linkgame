@@ -5,7 +5,7 @@ import cats.implicits._
 import io.circe.generic.extras.Configuration
 import io.circe.generic.extras.semiauto.deriveConfiguredCodec
 import io.circe.{Codec, Decoder, Encoder}
-import linkgame.game.Board.{Board, deleteTileFromBoard, initBoard, isCoordinateOnBoard, isEmpty, isSolvable, isValidPath, printBoard, refreshBoard}
+import linkgame.game.Board.{Board, Path, deleteTileFromBoard, getValidPath, initBoard, isCoordinateOnBoard, isEmpty, isSolvable, isValidPath, printBoard, refreshBoard}
 import linkgame.game.GameState.GameError
 import linkgame.player.Player
 
@@ -28,7 +28,7 @@ sealed trait GameState {
       case _: GameState.Win                              => GameError.GameAlreadyEnded.asLeft
     }
 
-  def attemptMatch(player: Player, p1: Coordinate, p2: Coordinate): Either[GameError, IO[GameState]] = {
+  def attemptMatch(player: Player, p1: Coordinate, p2: Coordinate): Either[GameError, IO[(Option[Path], GameState)]] = {
     this match {
       case inProgress @ GameState.InProgress(gameLevel, playerBoards, startInstant) =>
         val board = playerBoards.get(player).toRight(GameError.PlayerNotInRoom)
@@ -36,7 +36,7 @@ sealed trait GameState {
           board <- board
           _     <- Either.cond(isCoordinateOnBoard(board, p1), (), GameError.CoordinatesOutOfBounds)
           _     <- Either.cond(isCoordinateOnBoard(board, p2), (), GameError.CoordinatesOutOfBounds)
-          _     <- Either.cond(isValidPath(board, (p1.row, p1.column), (p2.row, p2.column)), (), GameError.InvalidMatch)
+          path  <- getValidPath(board, (p1.row, p1.column), (p2.row, p2.column)).toRight(GameError.InvalidMatch)
         } yield {
           val updatedBoard1 = deleteTileFromBoard(board, p1)
           val updatedBoard2 = deleteTileFromBoard(updatedBoard1, p2)
@@ -44,14 +44,14 @@ sealed trait GameState {
             for {
               end           <- IO.realTimeInstant
               completionTime = (end.toEpochMilli - startInstant.toEpochMilli).millis
-            } yield GameState.Win(gameLevel, player, completionTime)
+            } yield (None, GameState.Win(gameLevel, player, completionTime))
           } else {
             for {
               newBoard        <-
                 if (isSolvable(updatedBoard2)) { IO.pure { updatedBoard2 } }
                 else { refreshBoard(updatedBoard2) }
               newPlayersBoards = playerBoards.updated(player, newBoard)
-            } yield inProgress.copy(playerBoards = newPlayersBoards)
+            } yield (Some(path), inProgress.copy(playerBoards = newPlayersBoards))
           }
         }
       case _: GameState.GameStartsSoon                                              => GameError.GameNotStarted.asLeft

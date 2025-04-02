@@ -59,14 +59,15 @@ object Main extends IOApp {
         (p1, p2)         = points
         newStateOrError <- ref.evalModify { state =>
           state.attemptMatch(player, p1, p2) match {
-            case e @ Left(_)         =>
+            case Left(e)         =>
               IO.pure {
-                (state, e)
+                (state, Left(e))
               }
-            case s @ Right(newState) =>
-              newState.flatMap { state =>
+            case Right(newState) =>
+              newState.flatMap { case (path, state) =>
+                IO.println(s"path: $path") *>
                 IO.pure {
-                  (state, s)
+                  (state, Right(state))
                 }
               }
           }
@@ -87,17 +88,15 @@ object Main extends IOApp {
               case _                                => IO.println(Red(s"${Red("Unexpected Error!")}"))
             },
           newState =>
-            newState.flatMap(state =>
-              state match {
-                case InProgress(_, playerBoards, _)           =>
-                  playerBoards.get(player).fold(IO.println(Red(s"${Red("Unexpected Error!")}"))) { board =>
-                    printBoard(board).flatMap(_ => loop(ref))
-                  }
-                case GameState.Win(_, winner, completionTime) =>
-                  IO.println(Green(s"Congratulations ${winner.name}!!! Time taken: ${completionTime}"))
-                case _                                        => IO.println(Red(s"${Red("Unexpected Error!")}"))
-              }
-            ),
+            newState match {
+              case InProgress(_, playerBoards, _)           =>
+                playerBoards.get(player).fold(IO.println(Red(s"${Red("Unexpected Error!")}"))) { board =>
+                  printBoard(board).flatMap(_ => loop(ref))
+                }
+              case GameState.Win(_, winner, completionTime) =>
+                IO.println(Green(s"Congratulations ${winner.name}!!! Time taken: ${completionTime}"))
+              case _                                        => IO.println(Red(s"${Red("Unexpected Error!")}"))
+            },
         )
       } yield ()
     }

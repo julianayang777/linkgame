@@ -5,9 +5,9 @@ import cats.effect.{IO, Ref}
 import cats.syntax.all._
 import fs2.concurrent.Topic
 import fs2.{Pipe, Stream}
-import io.circe.jawn
+import io.circe._
 import io.circe.syntax.EncoderOps
-import linkgame.game.Board.printBoard
+import linkgame.game.Board.{Path, printBoard}
 import linkgame.game.Command.StartGame
 import linkgame.game.GameState.{AwaitingPlayers, InProgress, Win}
 import linkgame.game.{Command, GameLevel, GameState}
@@ -76,7 +76,7 @@ object GameRoutes {
                     result   <- roomRef.evalModify(_.handleCommand(Command.Join(player)))
                     response <- result.fold(
                       error => BadRequest(s"Failed to join room $roomId: $error"),
-                      newState =>
+                      { case (_, newState) =>
                         for {
                           topic          <- roomRef.get.map(_.topic)
                           queue          <- Queue.unbounded[IO, WebSocketFrame]
@@ -88,7 +88,8 @@ object GameRoutes {
                             send = WebSocketHelper.send(topic, queue),
                             receive = WebSocketHelper.receive(player, topic, queue, roomRef, leaderboardService),
                           )
-                        } yield response,
+                        } yield response
+                      },
                     )
                   } yield response
                 },
@@ -136,6 +137,15 @@ object GameRoutes {
         case _                         => IO.unit
       }
 
+    private def sendLinkPath(queue: Queue[IO, WebSocketFrame], maybePath: Option[Path]): IO[Unit] = {
+      maybePath match {
+        case Some(path) =>
+          val pathMessage = WebSocketFrame.Text(path.asJson.noSpaces)
+          IO.println(s"pathMessage: $pathMessage") *> queue.offer(pathMessage)
+        case None       => IO.println("hello") *> IO.unit
+      }
+    }
+
     private def handleRequest(
       player: Player,
       request: Request,
@@ -152,19 +162,21 @@ object GameRoutes {
         newStateOrError <- roomRef.evalModify(_.handleCommand(command))
         _               <- newStateOrError.fold(
           error => queue.offer(WebSocketFrame.Text(s"Failed to handle $request - $error")),
-          newState => {
+          { case (maybePath, newState) => {
             for {
               _ <- topic.publish1(WebSocketFrame.Text(newState.asJson.noSpaces))
+              _ <- sendLinkPath(queue, maybePath)
               _ <- newState match {
-                case inProgress: InProgress                 =>
+                case inProgress: InProgress =>
                   inProgress.playerBoards
                     .get(player)
                     .fold(IO.println("Unexpected Error!"))(printBoard)
                 case Win(gameLevel, player, completionTime) =>
                   leaderboardService.addScore(gameLevel, player.name, completionTime.toMillis)
-                case _                                      => IO.unit
+                case _ => IO.unit
               }
             } yield ()
+          }
           },
         )
       } yield ()
@@ -180,7 +192,7 @@ object GameRoutes {
           val schedule = for {
             _               <- IO.sleep(state.startIn)
             newStateOrError <- roomRef.evalModify(_.handleCommand(StartGame))
-            _               <- newStateOrError.traverse_ { newState =>
+            _               <- newStateOrError.traverse_ { case (_, newState) =>
               topic.publish1(WebSocketFrame.Text(newState.asJson.noSpaces))
             }
           } yield ()

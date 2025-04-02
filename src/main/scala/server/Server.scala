@@ -6,6 +6,7 @@ import cats.effect.{IO, Ref, Resource, ResourceApp}
 import cats.syntax.all._
 import org.http4s.HttpApp
 import org.http4s.ember.server.EmberServerBuilder
+import org.http4s.server.middleware.CORS
 import org.http4s.server.websocket.WebSocketBuilder2
 import pureconfig.ConfigSource
 import pureconfig.module.catseffect.syntax.CatsEffectConfigSource
@@ -17,6 +18,7 @@ import server.player.PlayerService.PlayerId
 import java.util.UUID
 
 object Server extends ResourceApp.Forever {
+  private val corsService = CORS.policy.withAllowOriginHost(_.host.value.matches("localhost")).withAllowCredentials(true)
 
   private def httpApp(
     wsb: WebSocketBuilder2[IO],
@@ -26,9 +28,12 @@ object Server extends ResourceApp.Forever {
     leaderboardService: LeaderboardService,
     authMiddleware: org.http4s.server.AuthMiddleware[IO, PlayerId],
   ): HttpApp[IO] = {
-    (AuthRoutes(authService, authMiddleware)
+    corsService(
+      (
+      AuthRoutes(authService, authMiddleware)
       <+> LeaderboardRoutes(leaderboardService, authMiddleware)
-      <+> GameRoutes(wsb, rooms, playerService, leaderboardService, authMiddleware)).orNotFound
+        <+> GameRoutes(wsb, rooms, playerService, leaderboardService, authMiddleware)
+      ).orNotFound)
   }
 
   override def run(args: List[String]): Resource[IO, Unit] = {
