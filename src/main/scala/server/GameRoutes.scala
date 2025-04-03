@@ -43,7 +43,7 @@ object GameRoutes {
           */
         case POST -> Root / "game" / "create" / nplayers / GameLevel(level) as _ =>
           nplayers.toIntOption match {
-            case Some(requiredPlayers) =>
+            case Some(requiredPlayers) if requiredPlayers > 0 =>
               for {
                 roomId   <- IO.randomUUID
                 topic    <- Topic[IO, WebSocketFrame.Text]
@@ -53,7 +53,8 @@ object GameRoutes {
                 _        <- gameRooms.update(_.updated(roomId, roomRef))
                 response <- Created(roomId.toString)
               } yield response
-            case None                  => ???
+            case Some(_) => BadRequest("Invalid number of players: must be greater than 0.")
+            case None    => BadRequest("Invalid number of players: could not parse the input as an integer.")
           }
 
         /** websocat -c "ws://localhost:8080/game/join/<roomId>"
@@ -108,6 +109,7 @@ object GameRoutes {
             response     <- maybeRoomRef.fold(NotFound(s"Room $roomId is not found")) { roomRef =>
               roomRef.get.flatMap(room => Ok(room.state.asJson))
             }
+            _            <- IO.println(response)
           } yield response
       }
     )
@@ -162,21 +164,22 @@ object GameRoutes {
         newStateOrError <- roomRef.evalModify(_.handleCommand(command))
         _               <- newStateOrError.fold(
           error => queue.offer(WebSocketFrame.Text(s"Failed to handle $request - $error")),
-          { case (maybePath, newState) => {
-            for {
-              _ <- topic.publish1(WebSocketFrame.Text(newState.asJson.noSpaces))
-              _ <- sendLinkPath(queue, maybePath)
-              _ <- newState match {
-                case inProgress: InProgress =>
-                  inProgress.playerBoards
-                    .get(player)
-                    .fold(IO.println("Unexpected Error!"))(printBoard)
-                case Win(gameLevel, player, completionTime) =>
-                  leaderboardService.addScore(gameLevel, player.name, completionTime.toMillis)
-                case _ => IO.unit
-              }
-            } yield ()
-          }
+          {
+            case (maybePath, newState) => {
+              for {
+                _ <- topic.publish1(WebSocketFrame.Text(newState.asJson.noSpaces))
+                _ <- sendLinkPath(queue, maybePath)
+                _ <- newState match {
+                  case inProgress: InProgress                 =>
+                    inProgress.playerBoards
+                      .get(player)
+                      .fold(IO.println("Unexpected Error!"))(printBoard)
+                  case Win(gameLevel, player, completionTime) =>
+                    leaderboardService.addScore(gameLevel, player.name, completionTime.toMillis)
+                  case _                                      => IO.unit
+                }
+              } yield ()
+            }
           },
         )
       } yield ()
