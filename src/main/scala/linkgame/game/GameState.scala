@@ -5,7 +5,7 @@ import cats.implicits._
 import io.circe.generic.extras.Configuration
 import io.circe.generic.extras.semiauto.deriveConfiguredCodec
 import io.circe.{Codec, Decoder, Encoder}
-import linkgame.game.Board.{Board, Path, deleteTileFromBoard, getValidPath, initBoard, isCoordinateOnBoard, isEmpty, isSolvable, isValidPath, printBoard, refreshBoard}
+import linkgame.game.Board.{Board, Path, deleteTileFromBoard, getValidPath, initBoard, isCoordinateOnBoard, isEmpty, isSolvable, printBoard, refreshBoard}
 import linkgame.game.GameState.GameError
 import linkgame.player.Player
 
@@ -21,11 +21,11 @@ sealed trait GameState {
         val newPlayers = players + player
         if (newPlayers.size < requiredPlayers) state.copy(players = newPlayers).pure[IO].asRight
         else GameState.GameStartsSoon(gameLevel, newPlayers, countDownDuration).pure[IO].asRight
-      case inProgress: GameState.InProgress              =>
+      case inProgress: GameState.InProgress                                       =>
         Either.cond(inProgress.playerBoards.contains(player), inProgress.pure[IO], GameError.GameAlreadyStarted)
-      case startSoon: GameState.GameStartsSoon           =>
+      case startSoon: GameState.GameStartsSoon                                    =>
         Either.cond(startSoon.players.contains(player), startSoon.pure[IO], GameError.GameAlreadyStarted)
-      case _: GameState.Win                              => GameError.GameAlreadyEnded.asLeft
+      case _: GameState.Win                                                       => GameError.GameAlreadyEnded.asLeft
     }
 
   def attemptMatch(player: Player, p1: Coordinate, p2: Coordinate): Either[GameError, IO[(Option[Path], GameState)]] = {
@@ -44,7 +44,7 @@ sealed trait GameState {
             for {
               end           <- IO.realTimeInstant
               completionTime = (end.toEpochMilli - startInstant.toEpochMilli).millis
-            } yield (None, GameState.Win(gameLevel, player, completionTime))
+            } yield (None, GameState.Win(gameLevel, player, playerBoards.keySet, completionTime))
           } else {
             for {
               newBoard        <-
@@ -84,7 +84,8 @@ object GameState {
   final case class InProgress(gameLevel: GameLevel, playerBoards: Map[Player, Board], startInstant: Instant)
       extends GameState
 
-  final case class Win(gameLevel: GameLevel, winner: Player, completionTime: FiniteDuration) extends GameState
+  final case class Win(gameLevel: GameLevel, winner: Player, players: Set[Player], completionTime: FiniteDuration)
+      extends GameState
 
   implicit val finiteDurationEncoder: Encoder[FiniteDuration] = Encoder.encodeLong.contramap[FiniteDuration](_.toMillis)
   implicit val finiteDurationDecoder: Decoder[FiniteDuration] = Decoder.decodeLong.emap {
@@ -112,4 +113,17 @@ object GameState {
     deriveConfiguredCodec
   }
 
+  object GameStatus {
+    val AwaitingPlayers = "Awaiting Players"
+    val StartsSoon      = "Starts Soon"
+    val InProgress      = "In Progress"
+    val Finished        = "Finished"
+  }
+
+  def getGameStatus(state: GameState): String = state match {
+    case _: AwaitingPlayers => GameStatus.AwaitingPlayers
+    case _: GameStartsSoon  => GameStatus.StartsSoon
+    case _: InProgress      => GameStatus.InProgress
+    case _: Win             => GameStatus.Finished
+  }
 }

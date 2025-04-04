@@ -121,7 +121,7 @@ object GameRoutes {
           for {
             roomsList         <- gameRooms.get.map(_.toList)
             gameRoomResponses <- roomsList.traverse { case (id, roomCell) =>
-              roomCell.get.map { room => GameRoomResponse(id, room.state) }
+              roomCell.get.map { room => GameRoomResponse.fromGameState(id, room.state) }
             }
             response          <- Ok(gameRoomResponses.asJson)
           } yield response
@@ -184,13 +184,13 @@ object GameRoutes {
                 _ <- topic.publish1(WebSocketFrame.Text(newState.asJson.noSpaces))
                 _ <- sendLinkPath(queue, maybePath)
                 _ <- newState match {
-                  case inProgress: InProgress                 =>
+                  case inProgress: InProgress                    =>
                     inProgress.playerBoards
                       .get(player)
                       .fold(IO.println("Unexpected Error!"))(printBoard)
-                  case Win(gameLevel, player, completionTime) =>
+                  case Win(gameLevel, player, _, completionTime) =>
                     leaderboardService.addScore(gameLevel, player.name, completionTime.toMillis)
-                  case _                                      => IO.unit
+                  case _                                         => IO.unit
                 }
               } yield ()
             }

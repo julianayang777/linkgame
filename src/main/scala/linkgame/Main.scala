@@ -66,9 +66,9 @@ object Main extends IOApp {
             case Right(newState) =>
               newState.flatMap { case (path, state) =>
                 IO.println(s"path: $path") *>
-                IO.pure {
-                  (state, Right(state))
-                }
+                  IO.pure {
+                    (state, Right(state))
+                  }
               }
           }
         }
@@ -89,13 +89,13 @@ object Main extends IOApp {
             },
           newState =>
             newState match {
-              case InProgress(_, playerBoards, _)           =>
+              case InProgress(_, playerBoards, _)              =>
                 playerBoards.get(player).fold(IO.println(Red(s"${Red("Unexpected Error!")}"))) { board =>
                   printBoard(board).flatMap(_ => loop(ref))
                 }
-              case GameState.Win(_, winner, completionTime) =>
+              case GameState.Win(_, winner, _, completionTime) =>
                 IO.println(Green(s"Congratulations ${winner.name}!!! Time taken: ${completionTime}"))
-              case _                                        => IO.println(Red(s"${Red("Unexpected Error!")}"))
+              case _                                           => IO.println(Red(s"${Red("Unexpected Error!")}"))
             },
         )
       } yield ()
