@@ -1,6 +1,7 @@
 package linkgame.game
 
 import io.circe.generic.semiauto.deriveCodec
+import io.circe._
 import io.circe.{Codec, KeyDecoder, KeyEncoder}
 
 sealed trait GameLevel
@@ -18,8 +19,6 @@ object GameLevel {
   case object Medium extends GameLevel
   case object Hard   extends GameLevel
 
-  implicit val codec: Codec[GameLevel] = deriveCodec
-
   implicit val levelKeyDecoder: KeyDecoder[GameLevel] = KeyDecoder[String].map {
     case "easy"   => Easy
     case "medium" => Medium
@@ -32,4 +31,19 @@ object GameLevel {
     case Medium => "medium"
     case Hard   => "hard"
   }
+
+  implicit val codec: Codec[GameLevel] = Codec.from(
+    Decoder.decodeString.emap {
+      case "easy"   => Right(Easy)
+      case "medium" => Right(Medium)
+      case "hard"   => Right(Hard)
+      case other    => Left(s"Invalid game level: $other")
+    },
+    Encoder.encodeString.contramap {
+      case Easy   => "easy"
+      case Medium => "medium"
+      case Hard   => "hard"
+    }
+  )
+
 }

@@ -92,6 +92,10 @@ where p1 is the coordinates of the first tile and p2 is the coordinates of the s
     - **Require:** Valid JWT token in the Authorization header or in query param `authToken` (retrieve from
       `/auth/login/<username>` response)
 
+- **GET** `localhost:8080/game/rooms` - retrieve all game rooms state.
+    - **Require:** Valid JWT token in the Authorization header or in query param `authToken` (retrieve from
+      `/auth/login/<username>` response)
+
 #### Leaderboard
 
 - **GET** `localhost:8080/leaderboard/<level>/top/<topN>` - retrieves the leaderboard of a specified level.

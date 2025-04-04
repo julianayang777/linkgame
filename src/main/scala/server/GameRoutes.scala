@@ -6,6 +6,7 @@ import cats.syntax.all._
 import fs2.concurrent.Topic
 import fs2.{Pipe, Stream}
 import io.circe._
+import io.circe.generic.auto._
 import io.circe.syntax.EncoderOps
 import linkgame.game.Board.{Path, printBoard}
 import linkgame.game.Command.StartGame
@@ -110,6 +111,19 @@ object GameRoutes {
               roomRef.get.flatMap(room => Ok(room.state.asJson))
             }
             _            <- IO.println(response)
+          } yield response
+
+        /** curl "localhost:8080/game/rooms"
+          * Response:
+          *  - All rooms
+          */
+        case GET -> Root / "game" / "rooms" as _                                 =>
+          for {
+            roomsList         <- gameRooms.get.map(_.toList)
+            gameRoomResponses <- roomsList.traverse { case (id, roomCell) =>
+              roomCell.get.map { room => GameRoomResponse(id, room.state) }
+            }
+            response          <- Ok(gameRoomResponses.asJson)
           } yield response
       }
     )
