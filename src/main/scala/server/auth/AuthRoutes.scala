@@ -12,7 +12,14 @@ import server.player.PlayerService.PlayerId
 object AuthRoutes {
   def apply(authService: AuthService, authMiddleware: AuthMiddleware[IO, PlayerId]): HttpRoutes[IO] = {
     HttpRoutes.of[IO] {
-      case req @ POST -> Root / "auth" / "signup" =>
+      /** curl -XPOST "localhost:8080/auth/signup"
+        * with json request = {"type": "SignUp", "username": <username>}
+        * Response:
+        * - string message = "Player with ID <playerId> created successfully"
+        * Fail:
+        * - BadRequest(UserAlreadyExists | UnexpectedError)
+        */
+      case req @ POST -> Root / "auth" / "signup"     =>
         for {
           request      <- req.as[SignUp]
           signupResult <- authService.signup(request.username)
@@ -22,6 +29,13 @@ object AuthRoutes {
           }
         } yield response
 
+      /** curl -XPOST "localhost:8080/auth/login/<username>"
+        * <username> - player username
+        * Response:
+        * - <token> - JWT token
+        * Fail:
+        * - BadRequest(UserNotFound)
+        */
       case POST -> Root / "auth" / "login" / username =>
         for {
           loginResult <- authService.login(username)
@@ -32,8 +46,7 @@ object AuthRoutes {
         } yield response
 
     } <+> authMiddleware {
-      AuthedRoutes.of[PlayerId, IO] {
-        case GET -> Root / "auth" / "info" as playerId =>
+      AuthedRoutes.of[PlayerId, IO] { case GET -> Root / "auth" / "info" as playerId =>
         Ok(s"Hello, $playerId")
       }
     }

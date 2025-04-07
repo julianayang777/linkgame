@@ -40,8 +40,11 @@ object GameRoutes {
         /** curl -XPOST "localhost:8080/game/create/<nplayers>/<level>"
           * <nplayers> - number of players to start the room
           * <level> := "easy" | "medium" | "hard"
-          * Response:
+          * Response: (Created)
           * - roomId - used to identify the room in the future plays
+          * Fail:
+          * - BadRequest("Invalid number of players: must be greater than 0." |
+          *              "Invalid number of players: could not parse the input as an integer.")
           */
         case POST -> Root / "game" / "create" / nplayers / GameLevel(level) as _ =>
           nplayers.toIntOption match {
@@ -68,6 +71,11 @@ object GameRoutes {
           * <coordinate> -> {"row": "<number>", "column": "<number>" }
           * Response if valid:
           * - GameStatus
+          * Fail:
+          * - BadRequest("Failed to retrieve player <playerId>: <error>" |
+          *             "Failed to join room <roomId>: <error>")
+          * - WS.Text("Failed to handle <request> - <error>")
+          * - NotFound("Room <roomId> is not found")
           */
         case GET -> Root / "game" / "join" / roomId as playerId                  =>
           for {
@@ -106,6 +114,8 @@ object GameRoutes {
           * <roomId>   UUID, should be valid and a room associated with it
           * Response:
           * - GameStatus
+          * Fail:
+          * - NotFound("Room <roomId> is not found")
           */
         case GET -> Root / "game" / roomId / "status" as _                       =>
           for {
@@ -119,7 +129,9 @@ object GameRoutes {
 
         /** curl "localhost:8080/game/rooms"
           * Response:
-          *  - All rooms
+          *  - List of GameRoomResponses
+          * Fail:
+          * - BadRequest("Failed to retrieve player <playerId>: <error>"),
           */
         case GET -> Root / "game" / "rooms" as playerId                          =>
           for {
