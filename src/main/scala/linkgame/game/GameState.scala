@@ -126,4 +126,11 @@ object GameState {
     case _: InProgress      => GameStatus.InProgress
     case _: Win             => GameStatus.Finished
   }
+
+  def playerInGame(player: Player, state: GameState): Boolean = state match {
+    case AwaitingPlayers(_, _, players) => players.contains(player)
+    case GameStartsSoon(_, players, _) => players.contains(player)
+    case InProgress(_, playerBoards, _) => playerBoards.contains(player)
+    case Win(_, _, players, _) => players.contains(player)
+  }
 }

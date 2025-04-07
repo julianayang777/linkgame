@@ -8,7 +8,7 @@ import linkgame.game.GameState.GameError.InvalidRequest
 import linkgame.game.{Command, GameState}
 import org.http4s.websocket.WebSocketFrame
 
-final case class GameRoom(state: GameState, topic: Topic[IO, WebSocketFrame.Text]) {
+final case class GameRoom(name: String, state: GameState, topic: Topic[IO, WebSocketFrame.Text]) {
   def handleCommand(c: Command): IO[(GameRoom, Either[GameState.GameError, (Option[Path], GameState)])] = {
     def addNone(result: Either[GameState.GameError, IO[GameState]]): Either[GameState.GameError, IO[(Option[Path], GameState)]] =
       result.map(io => io.map(game => (None, game)))

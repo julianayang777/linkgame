@@ -33,7 +33,8 @@ object GameRoutes {
     playerService: PlayerService,
     leaderboardService: LeaderboardService,
     authMiddleware: AuthMiddleware[IO, PlayerId],
-  ): HttpRoutes[IO] =
+  ): HttpRoutes[IO] = {
+
     authMiddleware(
       AuthedRoutes.of[PlayerId, IO] {
         /** curl -XPOST "localhost:8080/game/create/<nplayers>/<level>"
@@ -48,9 +49,12 @@ object GameRoutes {
               for {
                 roomId   <- IO.randomUUID
                 topic    <- Topic[IO, WebSocketFrame.Text]
+                roomName <- gameRooms.get.map(rooms => f"Room #${rooms.size + 1}%05d")
                 roomRef  <- AtomicCell
                   .apply[IO]
-                  .of[GameRoom](GameRoom(state = AwaitingPlayers(level, requiredPlayers, Set.empty), topic = topic))
+                  .of[GameRoom](
+                    GameRoom(name = roomName, state = AwaitingPlayers(level, requiredPlayers, Set.empty), topic = topic)
+                  )
                 _        <- gameRooms.update(_.updated(roomId, roomRef))
                 response <- Created(roomId.toString)
               } yield response
@@ -117,16 +121,25 @@ object GameRoutes {
           * Response:
           *  - All rooms
           */
-        case GET -> Root / "game" / "rooms" as _                                 =>
+        case GET -> Root / "game" / "rooms" as playerId                          =>
           for {
-            roomsList         <- gameRooms.get.map(_.toList)
-            gameRoomResponses <- roomsList.traverse { case (id, roomCell) =>
-              roomCell.get.map { room => GameRoomResponse.fromGameState(id, room.state) }
-            }
-            response          <- Ok(gameRoomResponses.asJson)
+            maybePlayer <- playerService.getPlayer(playerId)
+            response    <- maybePlayer.fold(
+              error => BadRequest(s"Failed to retrieve player $playerId: $error"),
+              player =>
+                for {
+                  roomsList         <- gameRooms.get.map(_.toList)
+                  gameRoomResponses <- roomsList.traverse { case (id, roomCell) =>
+                    roomCell.get.map { room => GameRoomResponse.fromGameState(id, player, room.name, room.state) }
+                  }
+                  response          <- Ok(gameRoomResponses.asJson)
+                } yield response,
+            )
           } yield response
       }
     )
+  }
+
   private object WebSocketHelper {
     def send(topic: Topic[IO, WebSocketFrame.Text], queue: Queue[IO, WebSocketFrame]): Stream[IO, WebSocketFrame] =
       Stream
