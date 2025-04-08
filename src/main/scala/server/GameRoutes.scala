@@ -75,7 +75,7 @@ object GameRoutes {
           * - BadRequest("Failed to retrieve player <playerId>: <error>" |
           *             "Failed to join room <roomId>: <error>")
           * - WS.Text("Failed to handle <request> - <error>")
-          * - NotFound("Room <roomId> is not found")
+          * - NotFound("Room <roomId> not found.")
           */
         case GET -> Root / "game" / "join" / roomId as playerId                  =>
           for {
@@ -85,7 +85,7 @@ object GameRoutes {
             response     <- maybePlayer.fold(
               error => BadRequest(s"Failed to retrieve player $playerId: $error"),
               player =>
-                maybeRoomRef.fold(NotFound(s"Room $roomId is not found")) { roomRef =>
+                maybeRoomRef.fold(NotFound(s"Room $roomId not found")) { roomRef =>
                   for {
                     result   <- roomRef.evalModify(_.handleCommand(Command.Join(player)))
                     response <- result.fold(
@@ -115,13 +115,13 @@ object GameRoutes {
           * Response:
           * - GameStatus
           * Fail:
-          * - NotFound("Room <roomId> is not found")
+          * - NotFound("Room <roomId> not found")
           */
         case GET -> Root / "game" / roomId / "status" as _                       =>
           for {
             roomId       <- IO(UUID.fromString(roomId))
             maybeRoomRef <- gameRooms.get.map(_.get(roomId))
-            response     <- maybeRoomRef.fold(NotFound(s"Room $roomId is not found")) { roomRef =>
+            response     <- maybeRoomRef.fold(NotFound(s"Room $roomId not found.")) { roomRef =>
               roomRef.get.flatMap(room => Ok(room.state.asJson))
             }
             _            <- IO.println(response)

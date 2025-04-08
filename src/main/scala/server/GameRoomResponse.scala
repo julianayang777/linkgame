@@ -2,7 +2,7 @@ package server
 
 import io.circe.generic.semiauto.{deriveDecoder, deriveEncoder}
 import io.circe.{Decoder, Encoder}
-import linkgame.game.GameState.{getGameStatus, playerInGame}
+import linkgame.game.GameState.{getGameStatus, playerCanJoin}
 import linkgame.game.{GameLevel, GameState}
 import linkgame.player.Player
 
@@ -15,7 +15,7 @@ final case class GameRoomResponse(
   joinedPlayers: Int,
   requiredPlayers: Int,
   status: String,
-  wasInRoom: Boolean,
+  canJoin: Boolean,
 ) {
 
   implicit val encoder: Encoder[GameRoomResponse] = deriveEncoder
@@ -30,6 +30,6 @@ object GameRoomResponse {
       case GameState.InProgress(level, playerBoards, _)               => (level, playerBoards.size, playerBoards.size)
       case GameState.Win(level, _, players, _)                        => (level, players.size, players.size)
     }
-    GameRoomResponse(id, name, level, joinedPlayers, requiredPlayers, getGameStatus(state), playerInGame(player, state))
+    GameRoomResponse(id, name, level, joinedPlayers, requiredPlayers, getGameStatus(state), playerCanJoin(player, state))
   }
 }
