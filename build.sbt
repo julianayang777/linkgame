@@ -2,6 +2,10 @@ ThisBuild / version := "0.1.0-SNAPSHOT"
 
 ThisBuild / scalaVersion := "2.13.16"
 
+enablePlugins(JavaAppPackaging)
+
+Compile / mainClass := Some("server.Server")
+
 val catsVersion        = "2.10.0"
 val catsEffect3Version = "3.3.0"
 val http4sVersion      = "0.23.18"
@@ -33,3 +37,4 @@ lazy val root = (project in file("."))
   .settings(
     name := "linkgame"
   )
+

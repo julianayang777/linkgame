@@ -36,4 +36,15 @@ object Config {
       }
     )
 
+  implicit val portReader: ConfigReader[Port] = ConfigReader.fromString { str =>
+    sys.env.get("PORT").flatMap(Port.fromString) match {
+      case Some(port) => Right(port)
+      case None =>
+        Port.fromString(str) match {
+          case Some(port) => Right(port)
+          case None => Left(CannotConvert(str, "Port", "Invalid port"))
+        }
+    }
+  }
+
 }

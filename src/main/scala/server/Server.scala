@@ -18,7 +18,8 @@ import server.player.PlayerService.PlayerId
 import java.util.UUID
 
 object Server extends ResourceApp.Forever {
-  private val corsService = CORS.policy.withAllowOriginHost(_.host.value.matches("localhost")).withAllowCredentials(true)
+  private val corsService =
+    CORS.policy.withAllowOriginHost(_.host.value.matches("localhost")).withAllowCredentials(true)
 
   private def httpApp(
     wsb: WebSocketBuilder2[IO],
@@ -30,10 +31,11 @@ object Server extends ResourceApp.Forever {
   ): HttpApp[IO] = {
     corsService(
       (
-      AuthRoutes(authService, authMiddleware)
-      <+> LeaderboardRoutes(leaderboardService, authMiddleware)
-        <+> GameRoutes(wsb, rooms, playerService, leaderboardService, authMiddleware)
-      ).orNotFound)
+        AuthRoutes(authService, authMiddleware)
+          <+> LeaderboardRoutes(leaderboardService, authMiddleware)
+          <+> GameRoutes(wsb, rooms, playerService, leaderboardService, authMiddleware)
+      ).orNotFound
+    )
   }
 
   override def run(args: List[String]): Resource[IO, Unit] = {

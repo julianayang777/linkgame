@@ -27,7 +27,7 @@ There are two entry points: one is for console based and another one is for serv
 
 ### Console-Based
 
-- Run `sbt run` and choose `linkgame.Main` or directly run `sbt "runMain linkgame.Main"`
+- Run `sbt "runMain linkgame.Main"`
 - You will be asked to enter a username and choose the game level.
 - Once the game starts, you need to enter the coordinates of two tiles that you want to match.
 - If the match is valid, the tiles will be removed.
@@ -35,7 +35,7 @@ There are two entry points: one is for console based and another one is for serv
 
 ### Server-Based
 
-- Run `sbt run` and choose `server.Server` or directly run `sbt "runMain server.Server"`
+- Run `sbt run` run `sbt "runMain server.Server"`
 - Once the server is running, you can use the following route to interact with server:
 
 #### Auth
