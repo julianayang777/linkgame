@@ -18,8 +18,10 @@ import server.player.PlayerService.PlayerId
 import java.util.UUID
 
 object Server extends ResourceApp.Forever {
+  private val allowedOriginEnv = sys.env.getOrElse("ALLOWED_ORIGIN", "localhost")
+
   private val corsService =
-    CORS.policy.withAllowOriginHost(_.host.value.matches("localhost")).withAllowCredentials(true)
+    CORS.policy.withAllowOriginHost(origin => origin.host.value == allowedOriginEnv).withAllowCredentials(true)
 
   private def httpApp(
     wsb: WebSocketBuilder2[IO],
