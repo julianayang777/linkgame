@@ -14,8 +14,17 @@ There are three levels in this game:
 Below are examples of how tiles can be correctly matched in **LinkGame**,
 as well as cases where they cannot be matched:
 
-![ValidMatchingExamples](./img/ValidMatchingExamples.png)
-![InvalidMatchingExamples](./img/InvalidMatchingExamples.png)
+#### Valid Matching Examples
+
+These images show the correct way to match tiles:
+
+<img src="./img/ValidMatchingExamples.png" width="500" />
+
+#### Invalid Matching Examples
+
+These images show cases where tiles cannot be matched:
+
+<img src="./img/InvalidMatchingExamples.png" width="500" />
 
 ## Prerequisites
 

@@ -92,9 +92,12 @@ object GameRoutes {
                       error => BadRequest(s"Failed to join room $roomId: $error"),
                       { case (_, newState) =>
                         for {
-                          topic          <- roomRef.get.map(_.topic)
+                          room           <- roomRef.get
+                          topic           = room.topic
                           queue          <- Queue.unbounded[IO, WebSocketFrame]
-                          newStateMessage = WebSocketFrame.Text(newState.asJson.noSpaces)
+                          newStateMessage = WebSocketFrame.Text(
+                            newState.asJson.mapObject(state => state.add("name", room.name.asJson)).noSpaces
+                          )
                           _              <- queue.offer(newStateMessage)
                           _              <- topic.publish1(newStateMessage)
                           _              <- WebSocketHelper.scheduleStartGameIfNeeded(newState, roomRef, topic)
@@ -122,7 +125,9 @@ object GameRoutes {
             roomId       <- IO(UUID.fromString(roomId))
             maybeRoomRef <- gameRooms.get.map(_.get(roomId))
             response     <- maybeRoomRef.fold(NotFound(s"Room $roomId not found.")) { roomRef =>
-              roomRef.get.flatMap(room => Ok(room.state.asJson))
+              roomRef.get.flatMap { room =>
+                Ok(room.state.asJson.mapObject(state => state.add("name", room.name.asJson)))
+              }
             }
             _            <- IO.println(response)
           } yield response
